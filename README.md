@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pala Note
 
-## Getting Started
+An ESP32-S3 e-paper voice recorder and its cloud. Press a button, speak, and the device
+transcribes on-device (OpenAI Whisper) and syncs the transcript to the cloud — where you
+read it in a dashboard, let Claude search it over MCP, and route tagged notes to Todoist.
 
-First, run the development server:
+This is a monorepo with three components:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+| Directory | What it is |
+|---|---|
+| [`cloud/`](cloud) | Next.js 16 + Neon Postgres app: ingest API, dashboard, remote MCP server, Todoist + webhooks, and a browser-based firmware flasher. See [cloud/README.md](cloud/README.md). |
+| [`firmware/pala_note/`](firmware/pala_note) | The ESP32-S3 Arduino firmware (recording, e-paper UI, Wi-Fi, on-device transcription, cloud sync). See [firmware/pala_note/BUILD.md](firmware/pala_note/BUILD.md). |
+| [`hardware/`](hardware) | 3D-printable case (STEP + 3MF). |
+
+## How the pieces fit
+
+```
+ ┌────────────┐  record + Whisper   ┌──────────────────┐   MCP / dashboard   ┌────────┐
+ │  Pala Note │ ──────────────────▶ │   Pala Cloud     │ ◀────────────────── │ Claude │
+ │ (firmware) │  POST /api/v1/notes │ (cloud/, Vercel) │   webhooks/Todoist  │  + you │
+ └────────────┘                     └──────────────────┘                     └────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The cloud's setup wizard flashes the firmware over Web Serial and provisions Wi-Fi, the
+OpenAI key, and a per-device ingest key into a config partition — so no real credentials
+are ever baked into a published binary.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Getting started
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Run the cloud locally:** see [cloud/README.md](cloud/README.md).
+- **Build the firmware:** [firmware/pala_note/BUILD.md](firmware/pala_note/BUILD.md), or run
+  `cloud/scripts/build-firmware.sh` to compile + stage it for the browser flasher.
 
-## Learn More
+## A note on secrets
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`secrets.h` (firmware) and `.env.local` (cloud) are git-ignored and must never be
+committed. Credentials are provisioned at flash/runtime, not stored in the repo.
+See each component's README for the env/config it needs.
