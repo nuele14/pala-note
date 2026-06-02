@@ -12,8 +12,6 @@ even flashes the firmware from the browser over Web Serial.
 Built on Next.js 16 (App Router), React 19, Neon Postgres + Drizzle, Auth.js v5
 (GitHub OAuth), Tailwind v4 + shadcn/ui.
 
-> Deployed reference instance: https://pala-cloud.vercel.app
-
 ## Features
 
 - **Ingest** — `POST /api/v1/notes`, authenticated by a per-device key; idempotent.

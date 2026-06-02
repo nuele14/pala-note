@@ -10,7 +10,7 @@ import { FlashWizard } from "@/components/flash/flash-wizard";
 
 export default async function FlashPage() {
   await requireSession();
-  const host = (await headers()).get("host") ?? "pala-cloud.vercel.app";
+  const host = (await headers()).get("host") ?? "localhost:3000";
   const [mask, wifi, devices] = await Promise.all([
     getStoredOpenAiKeyMask(),
     getSavedWifiInfo(),

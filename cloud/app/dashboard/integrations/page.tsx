@@ -7,7 +7,7 @@ import { IntegrationsSection } from "@/components/dashboard/integrations-section
 
 export default async function IntegrationsPage() {
   const { tenantId } = await requireSession();
-  const host = (await headers()).get("host") ?? "pala-cloud.vercel.app";
+  const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") ? "http" : "https";
   const mcpUrl = `${proto}://${host}/mcp`;
   const [todoist, workspace] = await Promise.all([getTodoistView(), getWorkspace(tenantId)]);

@@ -36,3 +36,9 @@ are ever baked into a published binary.
 `secrets.h` (firmware) and `.env.local` (cloud) are git-ignored and must never be
 committed. Credentials are provisioned at flash/runtime, not stored in the repo.
 See each component's README for the env/config it needs.
+
+## License
+
+The cloud app (`cloud/`) is MIT-licensed ([cloud/LICENSE](cloud/LICENSE)). The
+firmware and hardware contain third-party and vendor-derived components under
+their own terms — see [NOTICE.md](NOTICE.md) before reusing or redistributing.
