@@ -547,6 +547,26 @@ void showTransferMode(const char* ip) {
   refresh();
 }
 
+void showSyncMode(const char* ssid, const char* ip, int pending) {
+  clearWhite();
+  drawKicker("sync mode", 14);
+  fillRoundRect(16, 38, 168, 64, 12, BLACK);
+  drawStrInBox(16, 44, 168, 20, ssid, 1, WHITE);
+  drawStrInBox(16, 68, 168, 20, ip, 1, WHITE);
+
+  if (pending > 0) {
+    char b[32];
+    snprintf(b, sizeof(b), "%d pending note%s", pending, pending == 1 ? "" : "s");
+    drawStrC(100, 118, b, 1, BLACK);
+  } else {
+    drawStrC(100, 118, "all notes synced", 1, BLACK);
+  }
+
+  drawStrC(100, 142, "connect app or browser", 1, BLACK);
+  drawStrC(100, 170, "double rec to exit", 1, BLACK);
+  refresh();
+}
+
 void showSettings(int cursor) {
   clearWhite();
   drawStr(16, 14, "settings", 1, BLACK);

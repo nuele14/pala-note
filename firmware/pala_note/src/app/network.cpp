@@ -4,135 +4,38 @@
 #include "../../types.h"
 #include "network.h"
 #include "notes.h"
-#include "provisioning.h"
-#include "ca_certs.h"
+#include "battery.h"
 #include "rtc.h"
 #include "ui.h"
-#include "WiFi.h"
-#include "WiFiClientSecure.h"
+#include <WiFi.h>
 #include <WebServer.h>
 #include "SD_MMC.h"
 #include "esp_heap_caps.h"
-#include "../../secrets.h"
 
-static String parseWhisperText(const String& resp) {
-  int s = resp.indexOf("\"text\":\"");
-  if (s < 0) return "";
-  s += 8;
-  int e = s;
-  while (e < (int)resp.length()) {
-    if (resp[e] == '\\' && e + 1 < (int)resp.length()) { e += 2; continue; }
-    if (resp[e] == '"') break;
-    e++;
-  }
-  if (e >= (int)resp.length()) return "";
-  String text = "";
-  for (int i = s; i < e; i++) {
-    if (resp[i] == '\\' && i + 1 < e) {
-      char nx = resp[++i];
-      if      (nx == '"')  text += '"';
-      else if (nx == '\\') text += '\\';
-      else if (nx == 'n')  text += ' ';
-      else                 text += nx;
-    } else {
-      text += resp[i];
-    }
-  }
-  return text;
+static bool syncDoneFlag = false;
+
+bool isSyncDoneRequested() {
+  return syncDoneFlag;
 }
 
-static bool transcribeOnce(const String& wavPath, int noteNum) {
-  File f = SD_MMC.open(wavPath.c_str());
-  if (!f) return false;
-  size_t fileSize = f.size();
-
-  String bnd = "----PalaBoundary";
-  String pre = "--" + bnd + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n"
-               "--" + bnd + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.wav\"\r\nContent-Type: audio/wav\r\n\r\n";
-  String post = "\r\n--" + bnd + "--\r\n";
-  size_t totalLen = pre.length() + fileSize + post.length();
-
-  WiFiClientSecure client;
-  client.setCACert(GTS_ROOT_CAS);  // verify api.openai.com's TLS cert
-  client.setTimeout(90);
-
-  if (!client.connect("api.openai.com", 443)) { f.close(); return false; }
-
-  client.printf("POST /v1/audio/transcriptions HTTP/1.1\r\n"
-                "Host: api.openai.com\r\n"
-                "Authorization: Bearer %s\r\n"
-                "Content-Type: multipart/form-data; boundary=%s\r\n"
-                "Content-Length: %u\r\n"
-                "Connection: close\r\n\r\n",
-                palaOpenAiKey(), bnd.c_str(), (unsigned)totalLen);
-  client.print(pre);
-
-  uint8_t* chunk = (uint8_t*)heap_caps_malloc(4096, MALLOC_CAP_8BIT);
-  if (!chunk) { f.close(); client.stop(); return false; }
-  while (f.available()) {
-    int n = f.read(chunk, 4096);
-    if (n <= 0) break;
-    client.write(chunk, n);
-  }
-  heap_caps_free(chunk);
-  f.close();
-  client.print(post);
-
-  uint32_t deadline = millis() + 90000;
-  while (!client.available() && millis() < deadline) delay(20);
-
-  String resp = "";
-  bool inBody = false;
-  while (client.available() || (client.connected() && millis() < deadline)) {
-    if (!client.available()) { delay(10); continue; }
-    String line = client.readStringUntil('\n');
-    if (!inBody) {
-      if (line == "\r" || line == "") inBody = true;
-      if (line.startsWith("HTTP/") && line.indexOf(" 200 ") < 0) {
-        Serial.printf("[Whisper] %s\n", line.c_str());
-        client.stop(); return false;
-      }
-    } else {
-      resp += line;
-      if (resp.length() > 8192) break;
-    }
-  }
-  client.stop();
-
-  String text = parseWhisperText(resp);
-  if (text.length() == 0) { Serial.println("[Whisper] empty response"); return false; }
-
-  String tp = wavPath; tp.replace(".wav", ".txt");
-  File tf = SD_MMC.open(tp.c_str(), FILE_WRITE);
-  if (tf) { tf.print(text); tf.close(); }
-
-  updateIndexHasText(noteNum);
-  return true;
+void clearSyncDoneRequested() {
+  syncDoneFlag = false;
 }
 
-bool transcribe(const String& wavPath, int noteNum) {
-  for (int attempt = 0; attempt < 3; attempt++) {
-    if (transcribeOnce(wavPath, noteNum)) return true;
-    if (attempt < 2) { Serial.printf("[Whisper] retry %d/2\n", attempt + 1); delay(3000); }
-  }
-  return false;
+String getDeviceId() {
+  uint64_t mac = ESP.getEfuseMac();
+  char buf[24];
+  snprintf(buf, sizeof(buf), "ESP32-%04X", (uint16_t)(mac & 0xFFFF));
+  return String(buf);
 }
 
-void transcribeAll() {
-  int pending = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) if(!noteIndex[i].hasText) pending++;
-  int done = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) {
-    if (noteIndex[i].hasText) continue;
-    showTranscribing(done, pending);
-    char wp[64]; snprintf(wp, sizeof(wp), "%s/note_%03d.wav", NOTES_DIR, noteIndex[i].num);
-    if (transcribe(String(wp), noteIndex[i].num)) done++;
-  }
+String getSoftApSsid() {
+  uint64_t mac = ESP.getEfuseMac();
+  char buf[32];
+  snprintf(buf, sizeof(buf), "PalaNote-%04X", (uint16_t)(mac & 0xFFFF));
+  return String(buf);
 }
 
-// ─── Cloud upload (Pala Cloud) ───────────────────────────────────────────────
-
-// Escape a string for inclusion inside a JSON string literal.
 static String jsonEscape(const String& in) {
   String out;
   out.reserve(in.length() + 8);
@@ -152,89 +55,105 @@ static String jsonEscape(const String& in) {
   return out;
 }
 
-// Stable per-device id derived from the ESP32 eFuse MAC.
-static String deviceId() {
-  uint64_t mac = ESP.getEfuseMac();
-  char buf[20];
-  snprintf(buf, sizeof(buf), "ESP32-%012llX", (unsigned long long)mac);
-  return String(buf);
+// ─── REST API Handlers (Mobile App / PC Client) ───────────────────────────
+
+void handleApiInfo() {
+  loadIndex();
+  int pending = pendingSyncCount();
+  int total = (int)noteIndex.size();
+  int batPct = readBatteryPercent();
+
+  String json = "{";
+  json += "\"device_id\":\"" + jsonEscape(getDeviceId()) + "\",";
+  json += "\"firmware_version\":\"" FIRMWARE_VERSION "\",";
+  json += "\"battery_percent\":" + String(batPct) + ",";
+  json += "\"total_notes\":" + String(total) + ",";
+  json += "\"pending_notes\":" + String(pending);
+  json += "}";
+
+  transferServer.sendHeader("Access-Control-Allow-Origin", "*");
+  transferServer.send(200, "application/json", json);
 }
 
-// POST one transcript to the Pala Cloud ingest endpoint. Mirrors transcribeOnce().
-static bool uploadNoteOnce(int noteNum, const String& tag, const String& createdUtc, const String& text) {
-  String body = "{";
-  body += "\"device_id\":\"" + jsonEscape(deviceId()) + "\",";
-  body += "\"note_num\":" + String(noteNum) + ",";
-  body += "\"tag\":\"" + jsonEscape(tag) + "\",";
-  if (createdUtc.length()) body += "\"created_utc\":\"" + jsonEscape(createdUtc) + "\",";
-  else                     body += "\"created_utc\":null,";
-  body += "\"text\":\"" + jsonEscape(text) + "\"";
-  body += "}";
-
-  WiFiClientSecure client;
-  client.setCACert(GTS_ROOT_CAS);  // verify the Pala Cloud host's TLS cert
-  client.setTimeout(30);
-
-  if (!client.connect(palaApiHost(), 443)) return false;
-
-  client.printf("POST /api/v1/notes HTTP/1.1\r\n"
-                "Host: %s\r\n"
-                "Authorization: Bearer %s\r\n"
-                "Content-Type: application/json\r\n"
-                "Content-Length: %u\r\n"
-                "Connection: close\r\n\r\n",
-                palaApiHost(), palaApiKey(), (unsigned)body.length());
-  client.print(body);
-
-  uint32_t deadline = millis() + 30000;
-  while (!client.available() && millis() < deadline) delay(20);
-
-  // Only the status line matters: 200 = created or duplicate (both success).
-  bool ok = false;
-  while (client.available() || (client.connected() && millis() < deadline)) {
-    if (!client.available()) { delay(10); continue; }
-    String line = client.readStringUntil('\n');
-    if (line.startsWith("HTTP/")) {
-      ok = (line.indexOf(" 200 ") >= 0);
-      if (!ok) Serial.printf("[Upload] %s\n", line.c_str());
-      break;
-    }
-  }
-  client.stop();
-  return ok;
-}
-
-static bool uploadNote(int noteNum, const String& tag, const String& createdUtc, const String& text) {
-  for (int attempt = 0; attempt < 3; attempt++) {
-    if (uploadNoteOnce(noteNum, tag, createdUtc, text)) return true;
-    if (attempt < 2) { Serial.printf("[Upload] retry %d/2\n", attempt + 1); delay(3000); }
-  }
-  return false;
-}
-
-// Upload every transcribed-but-not-yet-uploaded note. Also retries notes that
-// were transcribed in a previous sync but failed to upload then.
-void uploadAll() {
-  { const char *k = palaApiKey(); if (strlen(k) < 8 || strcmp(k, "....") == 0) return; } // not configured
-  int pending = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) if (noteIndex[i].hasText && !noteIndex[i].uploaded) pending++;
-  if (pending == 0) return;
-
-  int done = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) {
-    if (!noteIndex[i].hasText || noteIndex[i].uploaded) continue;
-    showUploading(done, pending);
+void handleApiNotes() {
+  loadIndex();
+  String json = "[";
+  for (size_t i = 0; i < noteIndex.size(); i++) {
+    if (i > 0) json += ",";
     int num = noteIndex[i].num;
-    char tp[64]; snprintf(tp, sizeof(tp), "%s/note_%03d.txt", NOTES_DIR, num);
-    String text = readSmallFile(tp, 60000);
-    if (uploadNote(num, String(noteIndex[i].tag), noteCreatedUtc(num), text)) {
-      markUploaded(num);
-      done++;
-    }
+    String createdUtc = noteCreatedUtc(num);
+    size_t sz = noteAudioFileSize(num);
+    float dur = noteAudioDurationSec(num);
+
+    json += "{";
+    json += "\"num\":" + String(num) + ",";
+    json += "\"tag\":\"" + jsonEscape(String(noteIndex[i].tag)) + "\",";
+    if (createdUtc.length()) json += "\"created_utc\":\"" + jsonEscape(createdUtc) + "\",";
+    else                     json += "\"created_utc\":null,";
+    json += "\"duration_sec\":" + String(dur, 2) + ",";
+    json += "\"file_size\":" + String((unsigned long)sz) + ",";
+    json += "\"synced\":" + String(noteIndex[i].uploaded ? "true" : "false");
+    json += "}";
   }
+  json += "]";
+
+  transferServer.sendHeader("Access-Control-Allow-Origin", "*");
+  transferServer.send(200, "application/json", json);
 }
 
-// ─── Portal helpers ────────────────────────────────────────────────────────
+void handleApiNoteAudio() {
+  if (!transferServer.hasArg("num")) {
+    transferServer.send(400, "application/json", "{\"error\":\"Missing num parameter\"}");
+    return;
+  }
+  int num = transferServer.arg("num").toInt();
+  if (num <= 0) {
+    transferServer.send(400, "application/json", "{\"error\":\"Invalid num parameter\"}");
+    return;
+  }
+
+  char path[64];
+  snprintf(path, sizeof(path), "%s/note_%03d.wav", NOTES_DIR, num);
+  if (!SD_MMC.exists(path)) {
+    transferServer.send(404, "application/json", "{\"error\":\"Audio file not found\"}");
+    return;
+  }
+
+  File f = SD_MMC.open(path);
+  if (!f) {
+    transferServer.send(500, "application/json", "{\"error\":\"Failed to open audio file\"}");
+    return;
+  }
+
+  transferServer.sendHeader("Access-Control-Allow-Origin", "*");
+  transferServer.streamFile(f, "audio/wav");
+  f.close();
+}
+
+void handleApiNoteAck() {
+  if (!transferServer.hasArg("num")) {
+    transferServer.send(400, "application/json", "{\"error\":\"Missing num parameter\"}");
+    return;
+  }
+  int num = transferServer.arg("num").toInt();
+  if (num <= 0) {
+    transferServer.send(400, "application/json", "{\"error\":\"Invalid num parameter\"}");
+    return;
+  }
+
+  markUploaded(num);
+  String resp = "{\"status\":\"ok\",\"num\":" + String(num) + ",\"synced\":true}";
+  transferServer.sendHeader("Access-Control-Allow-Origin", "*");
+  transferServer.send(200, "application/json", resp);
+}
+
+void handleApiSyncDone() {
+  syncDoneFlag = true;
+  transferServer.sendHeader("Access-Control-Allow-Origin", "*");
+  transferServer.send(200, "application/json", "{\"status\":\"done\"}");
+}
+
+// ─── Web Portal Helpers ───────────────────────────────────────────────────
 
 String htmlEscape(const String& s) {
   String out = s;
@@ -295,7 +214,7 @@ String portalCss() {
   );
 }
 
-// ─── Portal handlers ───────────────────────────────────────────────────────
+// ─── Web Portal Handlers ──────────────────────────────────────────────────
 
 void handlePortalRoot() {
   loadIndex();
@@ -305,11 +224,11 @@ void handlePortalRoot() {
 
   String html = "<!doctype html><html><head><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                "<title>Pala Portal</title>" + portalCss() + "</head><body><div class='wrap'>";
+                "<title>Pala Note Portal</title>" + portalCss() + "</head><body><div class='wrap'>";
 
   html += "<div class='top'><div><h1>pala<br>portal</h1>"
           "<div class='sub'>local note transfer · <a href=\"/tags\" style=\"color:inherit\">tags</a></div></div>"
-          "<div class='pill'>" + String((int)noteIndex.size()) + " notes</div></div>";
+          "<div class='pill'>" + String((int)noteIndex.size()) + " notes (" + String(pendingSyncCount()) + " unsynced)</div></div>";
 
   html += "<div class='actions' style='margin-bottom:18px'>";
   html += "<a class='btn " + String(filter == "All" ? "primary" : "") + "' href='/'>All</a>";
@@ -319,18 +238,12 @@ void handlePortalRoot() {
   }
   html += "</div>";
 
-  html += "<div class='actions' style='margin-bottom:24px'>";
-  html += "<a class='btn primary' href='/export.txt'>Download all TXT</a>";
-  if (filter != "All")
-    html += "<a class='btn' href='/export.txt?tag=" + filter + "'>Download " + htmlEscape(filter) + " TXT</a>";
-  html += "</div>";
-
   int visibleCount = 0;
   for (int i = 0; i < (int)noteIndex.size(); i++)
     if (filter == "All" || filter == String(noteIndex[i].tag)) visibleCount++;
 
   if (visibleCount <= 0) {
-    html += "<div class='empty'>No notes for this filter.</div>";
+    html += "<div class='empty'>No notes recorded yet.</div>";
   } else {
     html += "<div class='grid'>";
     for (int v = 0; v < (int)noteIndex.size(); v++) {
@@ -338,21 +251,16 @@ void handlePortalRoot() {
       if (!(filter == "All" || filter == String(noteIndex[i].tag))) continue;
       int num = noteIndex[i].num;
 
-      char txtPath[64], wavPath[64];
-      snprintf(txtPath, sizeof(txtPath), "%s/note_%03d.txt", NOTES_DIR, num);
+      char wavPath[64];
       snprintf(wavPath, sizeof(wavPath), "%s/note_%03d.wav", NOTES_DIR, num);
 
-      String transcript = readSmallFile(txtPath, 1200);
-      if (transcript.length() == 0)
-        transcript = noteIndex[i].hasText ? "(empty transcript)" : "Not transcribed yet.";
+      float dur = noteAudioDurationSec(num);
+      size_t sz = noteAudioFileSize(num);
 
-      String title = transcript; title.replace("\n", " "); title.trim();
-      if (title.length() > 58) title = title.substring(0, 58) + "...";
-      if (title.length() == 0 || title == "Not transcribed yet.")
-        title = String("Voice note ") + String(num);
+      String title = String("Voice note #") + String(num) + " (" + String(dur, 1) + "s)";
 
       html += "<div class='card'>";
-      html += "<div class='row'><div><div class='num'>#" + String(num) + "</div>";
+      html += "<div class='row'><div><div class='num'>#" + String(num) + (noteIndex[i].uploaded ? " · synced" : " · unsynced") + "</div>";
       html += "<h2 class='title'>" + htmlEscape(title) + "</h2>";
       String createdUtc = noteCreatedUtc(num);
       if (createdUtc.length() > 0)
@@ -361,13 +269,14 @@ void handlePortalRoot() {
         html += "<div class='date'>time not set</div>";
       html += "</div>";
       html += "<div class='tag'>" + htmlEscape(String(noteIndex[i].tag)) + "</div></div>";
-      html += "<p class='text'>" + htmlEscape(transcript) + "</p>";
-      if (SD_MMC.exists(wavPath))
-        html += "<audio controls src='/audio?num=" + String(num) + "'></audio>";
+
+      if (SD_MMC.exists(wavPath)) {
+        html += "<audio controls src='/api/notes/audio?num=" + String(num) + "'></audio>";
+      }
       html += "<div class='actions'>";
-      html += "<a class='btn primary' href='/txt?num=" + String(num) + "'>Download TXT</a>";
-      if (SD_MMC.exists(wavPath))
-        html += "<a class='btn' href='/wav?num=" + String(num) + "'>Download WAV</a>";
+      if (SD_MMC.exists(wavPath)) {
+        html += "<a class='btn primary' href='/wav?num=" + String(num) + "'>Download WAV (" + String((unsigned long)(sz / 1024)) + " KB)</a>";
+      }
       html += "<a class='btn' style='margin-left:auto;color:#c0392b;border-color:#c0392b' "
               "href='/note/delete?num=" + String(num) + "' "
               "onclick=\"return confirm('Delete note #" + String(num) + "? This cannot be undone.')\">Delete</a>";
@@ -386,53 +295,28 @@ void handlePortalRoot() {
   transferServer.send(200, "text/html", html);
 }
 
-void handlePortalJson() {
-  loadIndex();
-  String json = "[";
-  for (int v = 0; v < (int)noteIndex.size(); v++) {
-    int i = (int)noteIndex.size() - 1 - v;
-    if (v > 0) json += ",";
-    json += "{";
-    json += "\"num\":" + String(noteIndex[i].num) + ",";
-    json += "\"tag\":\"" + String(noteIndex[i].tag) + "\",";
-    json += "\"hasText\":" + String(noteIndex[i].hasText ? "true" : "false");
-    json += "}";
-  }
-  json += "]";
-  transferServer.send(200, "application/json", json);
-}
-
 void handleExportTxt() {
   loadIndex();
   String filter = "All";
   if (transferServer.hasArg("tag")) filter = transferServer.arg("tag");
 
-  String exportText = "Pala Note Export\nFilter: " + filter + "\n------------------------------\n\n";
+  String exportText = "Pala Note Audio Manifest\nFilter: " + filter + "\n------------------------------\n\n";
 
   for (int v = 0; v < (int)noteIndex.size(); v++) {
     int i = (int)noteIndex.size() - 1 - v;
     if (!(filter == "All" || filter == String(noteIndex[i].tag))) continue;
     int num = noteIndex[i].num;
-    char txtPath[64]; snprintf(txtPath, sizeof(txtPath), "%s/note_%03d.txt", NOTES_DIR, num);
-    String transcript = readSmallFile(txtPath, 4000);
-    if (transcript.length() == 0)
-      transcript = noteIndex[i].hasText ? "(empty transcript)" : "Not transcribed yet.";
     exportText += "#";
     if (num < 100) exportText += "0";
     if (num < 10)  exportText += "0";
     exportText += String(num) + " · " + String(noteIndex[i].tag) + "\n";
     String createdUtc = noteCreatedUtc(num);
-    if (createdUtc.length() > 0) exportText += createdUtc + "\n";
-    exportText += "\n" + transcript + "\n\n------------------------------\n\n";
-    if (exportText.length() > 55000) {
-      exportText += "\nExport truncated on device because it became too large.\n";
-      break;
-    }
+    if (createdUtc.length() > 0) exportText += "Created: " + createdUtc + "\n";
+    exportText += "Duration: " + String(noteAudioDurationSec(num), 1) + "s\n";
+    exportText += "Synced: " + String(noteIndex[i].uploaded ? "Yes" : "No") + "\n\n------------------------------\n\n";
   }
 
-  String filename = "pala_notes_export";
-  if (filter != "All") filename += "_" + filter;
-  filename += ".txt";
+  String filename = "pala_notes_manifest.txt";
   transferServer.sendHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
   transferServer.send(200, "text/plain", exportText);
 }
@@ -549,28 +433,56 @@ void handleNoteDelete() {
   transferServer.send(303);
 }
 
+// ─── Setup & Lifecycle ────────────────────────────────────────────────────
+
 void setupTransferServer() {
-  transferServer.on("/", HTTP_GET, handlePortalRoot);
-  transferServer.on("/tags", HTTP_GET, handleTagsPage);
-  transferServer.on("/tag/add", HTTP_GET, handleTagAdd);
-  transferServer.on("/tag/delete", HTTP_GET, handleTagDelete);
-  transferServer.on("/note/delete", HTTP_GET, handleNoteDelete);
-  transferServer.on("/api/notes", HTTP_GET, handlePortalJson);
-  transferServer.on("/export.txt", HTTP_GET, handleExportTxt);
-  transferServer.on("/txt",   HTTP_GET, [](){ sendFileByNum("txt", "text/plain", true); });
-  transferServer.on("/wav",   HTTP_GET, [](){ sendFileByNum("wav", "audio/wav",  true); });
-  transferServer.on("/audio", HTTP_GET, [](){ sendFileByNum("wav", "audio/wav",  false); });
+  // REST API routes for mobile app & PC sync
+  transferServer.on("/api/info",        HTTP_GET,  handleApiInfo);
+  transferServer.on("/api/notes",       HTTP_GET,  handleApiNotes);
+  transferServer.on("/api/notes/audio", HTTP_GET,  handleApiNoteAudio);
+  transferServer.on("/api/notes/ack",   HTTP_ANY,  handleApiNoteAck);
+  transferServer.on("/api/sync/done",   HTTP_ANY,  handleApiSyncDone);
+
+  // Web portal routes
+  transferServer.on("/",                HTTP_GET,  handlePortalRoot);
+  transferServer.on("/tags",            HTTP_GET,  handleTagsPage);
+  transferServer.on("/tag/add",         HTTP_GET,  handleTagAdd);
+  transferServer.on("/tag/delete",      HTTP_GET,  handleTagDelete);
+  transferServer.on("/note/delete",     HTTP_GET,  handleNoteDelete);
+  transferServer.on("/export.txt",      HTTP_GET,  handleExportTxt);
+  transferServer.on("/txt",             HTTP_GET,  [](){ sendFileByNum("txt", "text/plain", true); });
+  transferServer.on("/wav",             HTTP_GET,  [](){ sendFileByNum("wav", "audio/wav",  true); });
+  transferServer.on("/audio",           HTTP_GET,  handleApiNoteAudio);
+
   transferServer.onNotFound([](){
+    transferServer.sendHeader("Access-Control-Allow-Origin", "*");
     transferServer.send(404, "text/plain", "Not found");
   });
 }
 
+void startSoftApSync() {
+  syncDoneFlag = false;
+  WiFi.mode(WIFI_AP);
+  String ssid = getSoftApSsid();
+  WiFi.softAP(ssid.c_str());
+  delay(50);
+
+  setupTransferServer();
+  transferServer.begin();
+  transferServerActive = true;
+  transferUrl = "192.168.4.1";
+  Serial.printf("[SoftAP] Started %s at %s\n", ssid.c_str(), transferUrl.c_str());
+}
+
 void stopTransferMode() {
+  syncDoneFlag = false;
   if (transferServerActive) {
     transferServer.stop();
     transferServerActive = false;
   }
+  WiFi.softAPdisconnect(true);
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
   transferUrl = "";
+  Serial.println("[SoftAP] Stopped");
 }

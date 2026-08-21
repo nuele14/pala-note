@@ -1,8 +1,6 @@
 #include "Arduino.h"
 #include "SD_MMC.h"
-#include "WiFi.h"
-#include "HTTPClient.h"
-#include "WiFiClientSecure.h"
+#include <WiFi.h>
 #include <WebServer.h>
 #include <vector>
 #include "driver/i2c_master.h"
@@ -128,93 +126,15 @@ void startRecordFlow() {
   showTagSelect(tagCursor);
 }
 
-// Try to join one network with a retry budget; updates the sync progress UI.
-static bool tryJoin(int idx, int maxTries, bool showProgress) {
-  const char *ssid = palaWifiSsidAt(idx);
-  if (!ssid || !strlen(ssid)) return false;
-  if (idx == 1 && !palaHasSecondNet()) return false;
-  WiFi.begin(ssid, palaWifiPassAt(idx));
-  for (int t = 0; t < maxTries && WiFi.status() != WL_CONNECTED; t++) {
-    delay(500);
-    if (showProgress) showWifiConnecting(t + 1, maxTries);
-  }
-  if (WiFi.status() == WL_CONNECTED) return true;
-  WiFi.disconnect(true);
-  return false;
-}
-
-// Connect to Wi-Fi, scan-first: prefer whichever of the two configured networks
-// is actually in range (active first), falling back to the other. As a last
-// resort, try the active network blindly (covers hidden SSIDs).
-static bool palaWifiConnect(bool showProgress) {
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true);
-  delay(50);
-  int n = WiFi.scanNetworks();
-
-  int order[2] = { palaActiveNet(), palaActiveNet() ^ 1 };
-  for (int k = 0; k < 2; k++) {
-    int idx = order[k];
-    const char *ssid = palaWifiSsidAt(idx);
-    if (!ssid || !strlen(ssid)) continue;
-    if (idx == 1 && !palaHasSecondNet()) continue;
-    bool inRange = false;
-    for (int s = 0; s < n; s++) {
-      if (WiFi.SSID(s) == ssid) { inRange = true; break; }
-    }
-    if (!inRange) continue;
-    if (tryJoin(idx, 20, showProgress)) return true;
-  }
-  // Hidden-SSID fallback: try the active network even if the scan didn't see it.
-  return tryJoin(palaActiveNet(), 16, showProgress);
-}
-
 void startSyncFlow() {
-  showWifiConnecting(0, 20);
-
-  if (palaWifiConnect(true)) {
-    syncTimeFromNTP(6000);
-    transcribeAll();
-    loadIndex();
-    uploadAll();      // push new transcripts to Pala Cloud (no-op if not configured)
-    WiFi.disconnect(true);
-    showDone();
-    soundSuccess();
-    delay(1600);
-  } else {
-    showError("NO WIFI");
-    delay(1800);
-  }
-
-  if (wakeToMenuRequested) {
-    menuCursor = 0;
-    state = STATE_MENU;
-    showMenu(menuCursor);
-  } else {
-    showIdle();
-  }
+  state = STATE_TRANSFER;
+  startSoftApSync();
+  int pending = pendingSyncCount();
+  showSyncMode(getSoftApSsid().c_str(), "192.168.4.1", pending);
 }
 
 void startTransferMode() {
-  state = STATE_TRANSFER;
-  showTransferConnecting();
-
-  if (!palaWifiConnect(false)) {
-    showError("NO WIFI");
-    delay(1600);
-    state = STATE_SETTINGS;
-    showSettings(settingsCursor);
-    return;
-  }
-
-  syncTimeFromNTP(8000);
-  setupTransferServer();
-  transferServer.begin();
-  transferServerActive = true;
-
-  IPAddress ip = WiFi.localIP();
-  transferUrl = ip.toString();
-  showTransferMode(transferUrl.c_str());
+  startSyncFlow();
 }
 
 // ─── Setup ────────────────────────────────────────────────────────────────
@@ -369,10 +289,9 @@ void loop() {
     if (rec == EV_SINGLE || rec == EV_LONG) {
       soundSelect();
       saveTag(lastRecNum, tags[constrain(tagCursor, 0, max(tagCount - 1, 0))]);
-      // Offer to sync now (instead of sleeping immediately) so you can also
-      // record again afterwards.
-      state = STATE_SYNC_CONFIRM;
-      showSyncConfirm(lastRecNum);
+      resetActivity();
+      state = STATE_IDLE;
+      showIdle();
     } else if (pwr == EV_SINGLE) {
       soundNext();
       if (tagCount > 0) tagCursor = (tagCursor + 1) % tagCount;
@@ -380,23 +299,11 @@ void loop() {
     }
   }
 
-  // SYNC CONFIRM after tagging ───────────────────────────────────────────
+  // SYNC CONFIRM (legacy fallback) ───────────────────────────────────────
   else if (state == STATE_SYNC_CONFIRM) {
-    ButtonEvent rec = readButtonEvent(BTN_REC);
-    ButtonEvent pwr = readButtonEvent(BTN_PWR);
-
-    if (rec == EV_SINGLE || rec == EV_LONG) {
-      // Sync now: connects Wi-Fi, transcribes + uploads, then returns to idle
-      // (awake) so you can keep recording. Sleeps on the normal idle timeout.
-      startSyncFlow();
-      resetActivity(); // fresh idle window after a (possibly long) sync
-    } else if (pwr == EV_SINGLE || rec == EV_DOUBLE) {
-      // Later: stay awake at idle so you can record again right away.
-      soundBack();
-      resetActivity();
-      state = STATE_IDLE;
-      showIdle();
-    }
+    resetActivity();
+    state = STATE_IDLE;
+    showIdle();
   }
 
   // MENU ────────────────────────────────────────────────────────────────
@@ -475,15 +382,28 @@ void loop() {
     }
   }
 
-  // TRANSFER MODE ───────────────────────────────────────────────────────
+  // TRANSFER / SYNC MODE ─────────────────────────────────────────────────
   else if (state == STATE_TRANSFER) {
     if (transferServerActive) transferServer.handleClient();
-    ButtonEvent rec = readButtonEvent(BTN_REC);
-    if (rec == EV_DOUBLE || rec == EV_LONG) {
-      soundBack();
+
+    if (isSyncDoneRequested()) {
+      clearSyncDoneRequested();
+      showDone();
+      soundSuccess();
+      delay(1500);
       stopTransferMode();
-      state = STATE_SETTINGS;
-      showSettings(settingsCursor);
+      resetActivity();
+      state = STATE_IDLE;
+      showIdle();
+    } else {
+      ButtonEvent rec = readButtonEvent(BTN_REC);
+      if (rec == EV_DOUBLE || rec == EV_LONG) {
+        soundBack();
+        stopTransferMode();
+        resetActivity();
+        state = STATE_IDLE;
+        showIdle();
+      }
     }
   }
 

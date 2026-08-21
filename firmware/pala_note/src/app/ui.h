@@ -53,5 +53,6 @@ void showUltraSleepScreen();
 void showPlaybackOverlay();
 void showTransferConnecting();
 void showTransferMode(const char* ip);
+void showSyncMode(const char* ssid, const char* ip, int pending);
 void showSettings(int cursor);
 void showDeviceInfo();

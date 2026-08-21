@@ -85,6 +85,34 @@ void markUploaded(int num) {
   writeNoteMeta(num, foundTag);
 }
 
+int pendingSyncCount() {
+  int count = 0;
+  for (size_t i = 0; i < noteIndex.size(); i++) {
+    if (!noteIndex[i].uploaded) count++;
+  }
+  return count;
+}
+
+size_t noteAudioFileSize(int num) {
+  char path[64];
+  snprintf(path, sizeof(path), "%s/note_%03d.wav", NOTES_DIR, num);
+  if (SD_MMC.exists(path)) {
+    File f = SD_MMC.open(path);
+    if (f) {
+      size_t sz = f.size();
+      f.close();
+      return sz;
+    }
+  }
+  return 0;
+}
+
+float noteAudioDurationSec(int num) {
+  size_t sz = noteAudioFileSize(num);
+  if (sz <= 44) return 0.0f;
+  return (float)(sz - 44) / (SAMPLE_RATE * 2.0f);
+}
+
 void deleteNote(int num) {
   const char* exts[] = {"wav", "txt", "meta", nullptr};
   char path[64];
