@@ -400,7 +400,7 @@ def main(page: ft.Page):
         if not cards:
             cards.append(
                 ft.Container(
-                    alignment=ft.alignment.center,
+                    alignment=ft.Alignment.CENTER,
                     padding=40,
                     content=ft.Column(
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -487,7 +487,7 @@ def main(page: ft.Page):
                         content=ft.ListView(
                             controls=search_results if search_results else [
                                 ft.Container(
-                                    alignment=ft.alignment.center,
+                                    alignment=ft.Alignment.CENTER,
                                     padding=40,
                                     content=ft.Text("Digita per cercare all'istante nei testi sbobinati...", color=ft.Colors.GREY_500),
                                 )
