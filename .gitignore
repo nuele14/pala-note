@@ -1,8 +1,39 @@
 # macOS
 .DS_Store
+._*
 
-# Per-component ignores live in cloud/.gitignore and firmware/pala_note/.gitignore.
-# This root file only covers cross-cutting cruft.
+# Python virtual environments & packages
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
 
-# vercel
+# Local runtime data & exports (Desktop client)
+desktop_client/data/
+desktop_client/exports/
+
+# IDE & Editor configs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vercel & Node
 .vercel
+node_modules/
+dist/
+.next/
+
+# Firmware build artifacts
+firmware/pala_note/secrets.h
+*.bin
+*.elf
+*.map
+build/
+out/

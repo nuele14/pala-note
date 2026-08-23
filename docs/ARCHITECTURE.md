@@ -232,13 +232,13 @@ Di seguito il dettaglio dei componenti modificati sul firmware ESP32-S3 (`pala_n
 1. **Fase 1 (Firmware ESP32)**: ✅ *Completata*
    - Eliminazione chiamate ad API esterne da `network.cpp`.
    - Implementazione modulo server SoftAP ed endpoint REST `/api/notes`.
-2. **Fase 2 (Core & Prototipo PC in Python)**: ⏳ *In corso*
-   - Modulo database SQLite relazionale (`db.py`).
-   - Modulo Sync Client Wi-Fi SoftAP (`sync_client.py`).
-   - Modulo STT Whisper locale (`stt_engine.py`).
+2. **Fase 2 (Core & Prototipo PC in Python - `desktop_client/`)**: ✅ *Completata*
+   - Modulo database SQLite relazionale 1-a-molti + FTS5 (`db.py`).
+   - Modulo Sync Client Wi-Fi SoftAP con download differenziale (`sync_client.py`).
+   - Modulo STT Whisper locale con segmenti timestamped (`stt_engine.py`).
    - Modulo LLM locale per revisione e prompt per tag (`llm_engine.py`).
-   - Modulo esportazione Google Drive / Markdown (`exporter.py`).
-   - Orchestratore CLI / GUI di test.
-3. **Fase 3 (Porting su Mobile Android)**:
+   - Modulo esportazione Google Drive / Markdown strutturato (`exporter.py`).
+   - Orchestratore CLI con comandi `sync`, `transcribe`, `elaborate`, `export`, `list`, `show`, `search`, `mock-add` (`orchestrator.py`).
+3. **Fase 3 (Porting su Mobile Android)**: ⏳ *Prossimo Step*
    - Trasposizione della logica in Kotlin (Room DB, Sherpa-ONNX STT, Llama.cpp LLM, Google Drive API).
    - Realizzazione dell'interfaccia utente in Jetpack Compose.
