@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -48,6 +49,7 @@ def main(page: ft.Page):
     selected_tag_filter = "All"
     search_query = ""
     is_syncing = False
+    active_audio_proc: Optional[subprocess.Popen] = None
 
     # ---------------------------------------------------------------------------
     # Componenti Condivisi
@@ -61,10 +63,20 @@ def main(page: ft.Page):
         page.snack_bar.open = True
         page.update()
 
+    def stop_current_audio():
+        nonlocal active_audio_proc
+        if active_audio_proc is not None:
+            try:
+                active_audio_proc.terminate()
+            except Exception:
+                pass
+            active_audio_proc = None
+
     # ---------------------------------------------------------------------------
     # 1. SCHERMATA DETTAGLIO NOTA (Modal Sheet)
     # ---------------------------------------------------------------------------
     def open_note_detail(note_id: str):
+        stop_current_audio()
         note = db.get_note(note_id)
         if not note:
             show_snackbar("Nota non trovata", is_error=True)
@@ -75,28 +87,24 @@ def main(page: ft.Page):
         tag = note.get("tag", "Untagged")
         color = get_tag_color(tag)
 
-        # Audio player
+        # Audio player con afplay nativo macOS
         audio_path = note.get("audio_local_path", "")
-        audio_player = None
         play_btn = None
-        is_playing = False
 
         if audio_path and Path(audio_path).exists():
-            audio_player = ft.Audio(src=audio_path, autoplay=False)
-            page.overlay.append(audio_player)
-
             def toggle_audio(e):
-                nonlocal is_playing
-                if not is_playing:
-                    audio_player.play()
-                    play_btn.icon = ft.Icons.PAUSE_ROUNDED
-                    play_btn.text = "Pausa"
-                    is_playing = True
+                nonlocal active_audio_proc
+                if active_audio_proc is None or active_audio_proc.poll() is not None:
+                    try:
+                        active_audio_proc = subprocess.Popen(["afplay", audio_path])
+                        play_btn.icon = ft.Icons.STOP_ROUNDED
+                        play_btn.text = "Ferma"
+                    except Exception as ex:
+                        show_snackbar(f"Errore riproduzione: {ex}", is_error=True)
                 else:
-                    audio_player.pause()
+                    stop_current_audio()
                     play_btn.icon = ft.Icons.PLAY_ARROW_ROUNDED
                     play_btn.text = "Riproduci"
-                    is_playing = False
                 page.update()
 
             play_btn = ft.ElevatedButton(
@@ -177,7 +185,7 @@ def main(page: ft.Page):
                     # Trascrizione Originale Grezza
                     ft.ExpansionTile(
                         title=ft.Text("🎙️ Trascrizione Grezza (STT)", size=14, weight=ft.FontWeight.W_500),
-                        initially_expanded=False,
+                        expanded=False,
                         controls=[
                             ft.Container(
                                 padding=12,
@@ -205,7 +213,7 @@ def main(page: ft.Page):
             ),
         )
 
-        bs = ft.BottomSheet(content=sheet_content, is_scroll_controlled=True)
+        bs = ft.BottomSheet(content=sheet_content, show_drag_handle=True, scrollable=True)
         page.bottom_sheet = bs
         bs.open = True
         page.update()
@@ -435,10 +443,12 @@ def main(page: ft.Page):
         )
 
     # --- TAB 1: RICERCA FTS5 ---
-    def build_search_view() -> ft.Control:
+    search_list_view = ft.ListView(spacing=6, expand=True)
+
+    def update_search_results(query_str: str):
         search_results = []
-        if search_query.strip():
-            results = db.search_notes(search_query.strip(), limit=30)
+        if query_str.strip():
+            results = db.search_notes(query_str.strip(), limit=30)
             for r in results:
                 nid = r["id"]
                 tag = r.get("tag", "Untagged")
@@ -462,10 +472,37 @@ def main(page: ft.Page):
                     )
                 )
 
+        if not search_results:
+            search_results.append(
+                ft.Container(
+                    alignment=ft.Alignment.CENTER,
+                    padding=40,
+                    content=ft.Text("Digita per cercare all'istante nei testi sbobinati...", color=ft.Colors.GREY_500),
+                )
+            )
+
+        search_list_view.controls = search_results
+        try:
+            search_list_view.update()
+        except Exception:
+            pass
+
+    def build_search_view() -> ft.Control:
         def on_search_change(e):
             nonlocal search_query
             search_query = e.control.value
-            render_current_view()
+            update_search_results(search_query)
+
+        search_tf = ft.TextField(
+            value=search_query,
+            hint_text="Cerca tra tutte le registrazioni...",
+            prefix_icon=ft.Icons.SEARCH_ROUNDED,
+            border_radius=12,
+            autofocus=True,
+            on_change=on_search_change,
+        )
+
+        update_search_results(search_query)
 
         return ft.Container(
             padding=16,
@@ -474,26 +511,10 @@ def main(page: ft.Page):
                 expand=True,
                 spacing=14,
                 controls=[
-                    ft.TextField(
-                        value=search_query,
-                        hint_text="Cerca tra tutte le registrazioni...",
-                        prefix_icon=ft.Icons.SEARCH_ROUNDED,
-                        border_radius=12,
-                        autofocus=True,
-                        on_change=on_search_change,
-                    ),
+                    search_tf,
                     ft.Container(
                         expand=True,
-                        content=ft.ListView(
-                            controls=search_results if search_results else [
-                                ft.Container(
-                                    alignment=ft.Alignment.CENTER,
-                                    padding=40,
-                                    content=ft.Text("Digita per cercare all'istante nei testi sbobinati...", color=ft.Colors.GREY_500),
-                                )
-                            ],
-                            spacing=6,
-                        ),
+                        content=search_list_view,
                     ),
                 ],
             ),
@@ -579,6 +600,7 @@ def main(page: ft.Page):
     body_container = ft.Container(expand=True)
 
     def render_current_view():
+        stop_current_audio()
         if current_tab_index == 0:
             body_container.content = build_notes_feed()
         elif current_tab_index == 1:
