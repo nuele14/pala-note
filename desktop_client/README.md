@@ -18,7 +18,15 @@ pip install -r requirements.txt
 
 ### 🚀 Utilizzo
 
-#### 1. Esecuzione Pipeline Completa
+#### 1. Avvio dell'Interfaccia Grafica (GUI Material 3 / Mobile-First)
+```bash
+python app_gui.py
+```
+Apre l'interfaccia interattiva con feed delle note, player audio, ricerca istantanea FTS5, editor dei prompt e pulsante **Sync** con animazione di stato.
+
+---
+
+#### 2. Esecuzione Pipeline da Riga di Comando (CLI)
 Metti il Pala Note in modalità **Sync** dal menu a schermo, connettiti al Wi-Fi `PalaNote-XXXX` dal tuo computer e lancia:
 
 ```bash
