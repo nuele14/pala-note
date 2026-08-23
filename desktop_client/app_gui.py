@@ -102,20 +102,20 @@ def main(page: ft.Page):
             play_btn = ft.ElevatedButton(
                 "Riproduci Audio",
                 icon=ft.Icons.PLAY_ARROW_ROUNDED,
-                style=ft.ButtonStyle(bgcolor=ft.Colors.SURFACE_VARIANT, color=ft.Colors.ON_SURFACE),
+                style=ft.ButtonStyle(bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH, color=ft.Colors.ON_SURFACE),
                 on_click=toggle_audio,
             )
 
         # Re-elaborazione LLM
         def trigger_re_elaborate(e):
             show_snackbar("Rielaborazione LLM in corso...")
-            llm = LLMEngine(db=db)
             threading.Thread(target=run_llm_worker).start()
 
         def run_llm_worker():
             llm = LLMEngine(db=db)
             llm.elaborate_note(note_id)
-            page.close_bottom_sheet()
+            if page.bottom_sheet:
+                page.bottom_sheet.open = False
             render_current_view()
             show_snackbar("Nota rielaborata con successo!")
 
@@ -140,14 +140,14 @@ def main(page: ft.Page):
                                 content=ft.Text(f"#{note.get('device_note_num')} {tag}", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
                                 bgcolor=color,
                                 border_radius=16,
-                                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                                padding=ft.Padding(12, 6, 12, 6),
                             ),
                             ft.Text(note.get("created_utc", "")[:16].replace("T", " "), size=12, color=ft.Colors.GREY_400),
                         ],
                     ),
                     # Audio Bar
                     ft.Container(
-                        bgcolor=ft.Colors.SURFACE_VARIANT,
+                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                         border_radius=12,
                         padding=12,
                         content=ft.Row(
@@ -164,8 +164,8 @@ def main(page: ft.Page):
                     # Elaborazione LLM (Markdown)
                     ft.Text("✨ Contenuto Elaborato", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
                     ft.Container(
-                        bgcolor=ft.Colors.BACKGROUND,
-                        border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                        bgcolor=ft.Colors.SURFACE,
+                        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
                         border_radius=12,
                         padding=14,
                         content=ft.Markdown(
@@ -181,7 +181,7 @@ def main(page: ft.Page):
                         controls=[
                             ft.Container(
                                 padding=12,
-                                bgcolor=ft.Colors.SURFACE_VARIANT,
+                                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                                 border_radius=8,
                                 content=ft.Text(
                                     trans.get("raw_text", "Nessuna trascrizione") if trans else "Nessuna trascrizione",
@@ -206,7 +206,9 @@ def main(page: ft.Page):
         )
 
         bs = ft.BottomSheet(content=sheet_content, is_scroll_controlled=True)
-        page.open(bs)
+        page.bottom_sheet = bs
+        bs.open = True
+        page.update()
 
     # ---------------------------------------------------------------------------
     # 2. DIALOG DI SINCRONIZZAZIONE (Sync Workflow)
@@ -248,7 +250,9 @@ def main(page: ft.Page):
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
-        page.open(dialog)
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
         def sync_worker():
             nonlocal is_syncing
@@ -321,9 +325,9 @@ def main(page: ft.Page):
             tag_chips.append(
                 ft.Container(
                     content=ft.Text(t, size=12, weight=ft.FontWeight.W_600 if is_sel else ft.FontWeight.NORMAL, color=ft.Colors.WHITE if is_sel else ft.Colors.ON_SURFACE_VARIANT),
-                    bgcolor=get_tag_color(t) if is_sel else ft.Colors.SURFACE_VARIANT,
+                    bgcolor=get_tag_color(t) if is_sel else ft.Colors.SURFACE_CONTAINER_HIGH,
                     border_radius=16,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                    padding=ft.Padding(12, 6, 12, 6),
                     on_click=on_chip_click,
                     animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
                 )
@@ -353,7 +357,7 @@ def main(page: ft.Page):
 
             card = ft.Card(
                 elevation=2,
-                margin=ft.margin.symmetric(vertical=4, horizontal=0),
+                margin=ft.Margin(0, 4, 0, 4),
                 content=ft.Container(
                     padding=14,
                     border_radius=12,
@@ -369,7 +373,7 @@ def main(page: ft.Page):
                                             content=ft.Text(tag, size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
                                             bgcolor=color,
                                             border_radius=10,
-                                            padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                                            padding=ft.Padding(8, 3, 8, 3),
                                         ),
                                         ft.Text(f"#{n['device_note_num']}", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_400),
                                     ], spacing=6),
@@ -613,10 +617,15 @@ def main(page: ft.Page):
 
     # Floating Action Button per Sincronizzazione
     fab = ft.FloatingActionButton(
-        icon=ft.Icons.SYNC_ROUNDED,
-        text="Sync",
         bgcolor=ft.Colors.PRIMARY,
-        content=ft.Row([ft.Icon(ft.Icons.SYNC_ROUNDED, color=ft.Colors.ON_PRIMARY), ft.Text("Sync", color=ft.Colors.ON_PRIMARY, weight=ft.FontWeight.BOLD)], spacing=6),
+        content=ft.Row(
+            alignment=ft.MainAxisAlignment.CENTER,
+            controls=[
+                ft.Icon(ft.Icons.SYNC_ROUNDED, color=ft.Colors.ON_PRIMARY),
+                ft.Text("Sync", color=ft.Colors.ON_PRIMARY, weight=ft.FontWeight.BOLD),
+            ],
+            spacing=6,
+        ),
         on_click=open_sync_dialog,
     )
 
