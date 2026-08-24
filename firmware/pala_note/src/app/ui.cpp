@@ -164,8 +164,8 @@ void drawSoftFrame() {
 }
 
 void drawProductWordmark(int cx, int y, uint8_t color) {
-  drawStr(cx - textW("pala", 2) / 2, y,      "pala", 2, color);
-  drawStr(cx - textW("note", 2) / 2, y + 22, "note", 2, color);
+  drawStr(cx - textW("ES1", 2) / 2, y,      "ES1", 2, color);
+  drawStr(cx - textW("uno", 1) / 2, y + 24, "uno", 1, color);
 }
 
 void drawModernPill(int x, int y, int w, int h, const char* label, bool active) {
@@ -311,17 +311,67 @@ void showTagSelect(int cursor) {
 
 void showMenu(int cursor) {
   clearWhite();
-  drawStr(16, 14, "menu", 1, BLACK);
-  hline(16, 32, W-32, BLACK);
-  const int y0 = 42, step = 36;
+  drawStr(16, 12, "menu", 1, BLACK);
+  hline(16, 26, W-32, BLACK);
+  const int y0 = 34, step = 28, itemH = 25;
   for (int row = 0; row < MENU_COUNT; row++) {
     bool active = row == cursor;
     int y = y0 + row * step;
-    if (active) fillRoundRect(16, y, 168, 31, 8, BLACK);
-    else        strokeRoundRect(16, y, 168, 31, 8, 1, BLACK);
+    if (active) fillRoundRect(16, y, 168, itemH, 7, BLACK);
+    else        strokeRoundRect(16, y, 168, itemH, 7, 1, BLACK);
     uint8_t col = active ? WHITE : BLACK;
-    drawStrInBox(16, y, 168, 31, MENU_ITEMS[row], 1, col);
+    drawStrInBox(16, y, 168, itemH, MENU_ITEMS[row], 1, col);
   }
+  refresh();
+}
+
+void showShikamaru(int minutes, int seconds, bool isFocus, int sessionNum, bool isPaused) {
+  clearWhite();
+  // Header
+  drawStr(16, 12, "shikamaru", 1, BLACK);
+  drawStrFit(120, 12, 64, isFocus ? "FOCUS" : "REST", 1, BLACK);
+  hline(16, 26, W - 32, BLACK);
+
+  // Mode badge
+  if (isFocus) {
+    fillRoundRect(36, 36, 128, 24, 12, BLACK);
+    char sessBuf[24];
+    snprintf(sessBuf, sizeof(sessBuf), "FOCUS #%d", sessionNum);
+    drawStrInBox(36, 36, 128, 24, sessBuf, 1, WHITE);
+  } else {
+    strokeRoundRect(36, 36, 128, 24, 12, 2, BLACK);
+    drawStrInBox(36, 36, 128, 24, "SHORT BREAK", 1, BLACK);
+  }
+
+  // Giant Timer Digits (e.g. "24:59")
+  char timeBuf[16];
+  snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", minutes, seconds);
+  drawStrC(100, 78, timeBuf, 3, BLACK);
+
+  // Status & session dots
+  if (isPaused) {
+    drawStrC(100, 134, "[ PAUSED ]", 1, BLACK);
+  } else {
+    int gap = 18, startX = 100 - (3 * gap) / 2;
+    for (int i = 1; i <= 4; i++) {
+      int x = startX + (i - 1) * gap;
+      if (i < sessionNum || (i == sessionNum && !isFocus)) {
+        fillCircle(x, 138, 5, BLACK);
+      } else if (i == sessionNum && isFocus) {
+        fillCircle(x, 138, 5, BLACK);
+        strokeCircle(x, 138, 7, 1, BLACK);
+      } else {
+        strokeCircle(x, 138, 5, 1, BLACK);
+      }
+    }
+  }
+
+  // Footer hints
+  hline(0, 179, W, BLACK);
+  drawStr(8, 186, isPaused ? "start" : "pause", 1, BLACK);
+  int rw = textW("menu", 1);
+  drawStr(W - 8 - rw, 186, "menu", 1, BLACK);
+
   refresh();
 }
 
@@ -512,12 +562,44 @@ void showError(const char* msg) {
 
 void showUltraSleepScreen() {
   clearWhite();
-  #ifdef LOGO_WIDTH
-    drawBitmap1BPP((W - LOGO_WIDTH) / 2, (H - LOGO_HEIGHT) / 2,
-                   logo_bitmap, LOGO_WIDTH, LOGO_HEIGHT, BLACK);
-  #else
+  bool drawn = false;
+
+  if (SD_MMC.exists(SCREENSAVERS_DIR)) {
+    File dir = SD_MMC.open(SCREENSAVERS_DIR);
+    if (dir && dir.isDirectory()) {
+      std::vector<String> fileList;
+      File entry = dir.openNextFile();
+      while (entry) {
+        String fname = entry.name();
+        if (!entry.isDirectory() && (fname.endsWith(".bin") || fname.endsWith(".BIN"))) {
+          fileList.push_back(String(SCREENSAVERS_DIR) + "/" + fname);
+        }
+        entry = dir.openNextFile();
+      }
+      dir.close();
+
+      if (!fileList.empty()) {
+        int r = random((int)fileList.size());
+        File sf = SD_MMC.open(fileList[r].c_str());
+        if (sf) {
+          uint8_t* sBuf = (uint8_t*)malloc(5000);
+          if (sBuf) {
+            size_t rb = sf.read(sBuf, 5000);
+            if (rb == 5000) {
+              drawBitmap1BPP(0, 0, sBuf, 200, 200, BLACK);
+              drawn = true;
+            }
+            free(sBuf);
+          }
+          sf.close();
+        }
+      }
+    }
+  }
+
+  if (!drawn) {
     drawProductWordmark(100, 70, BLACK);
-  #endif
+  }
   refresh();
 }
 

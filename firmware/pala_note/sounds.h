@@ -135,3 +135,15 @@ inline void soundDelete() {
   playToneUI(260.0f, 55, 0.08f);
   soundDisable();
 }
+
+// Gentle relaxing notification chime for Shikamaru Focus Timer (528Hz -> 660Hz -> 792Hz)
+inline void soundShikamaruRelax() {
+  if (!palaSoundEnabled) return;
+  soundEnable();
+  playToneUI(528.0f, 70, 0.10f);
+  delay(15);
+  playToneUI(660.0f, 90, 0.08f);
+  delay(15);
+  playToneUI(792.0f, 130, 0.06f);
+  soundDisable();
+}

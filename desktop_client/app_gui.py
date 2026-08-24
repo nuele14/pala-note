@@ -34,7 +34,7 @@ def get_tag_color(tag: str) -> str:
 
 
 def main(page: ft.Page):
-    page.title = "Pala Note — Local-First Edge AI"
+    page.title = "ES1 — Extransformer Shield Uno"
     page.theme_mode = ft.ThemeMode.DARK
     page.window.width = 460
     page.window.height = 860
@@ -226,7 +226,7 @@ def main(page: ft.Page):
         if is_syncing:
             return
 
-        sync_status_text = ft.Text("Connessione all'hotspot PalaNote...", size=14)
+        sync_status_text = ft.Text("Connessione all'hotspot ES1...", size=14)
         progress_bar = ft.ProgressBar(width=340, value=None)
         close_btn = ft.TextButton("Chiudi", visible=False)
 
@@ -240,7 +240,7 @@ def main(page: ft.Page):
         dialog = ft.AlertDialog(
             title=ft.Row([
                 ft.Icon(ft.Icons.WIFI_ROUNDED, color=ft.Colors.PRIMARY),
-                ft.Text("Sincronizzazione Pala Note", size=18, weight=ft.FontWeight.BOLD),
+                ft.Text("Sincronizzazione ES1", size=18, weight=ft.FontWeight.BOLD),
             ]),
             content=ft.Container(
                 width=360,
@@ -416,7 +416,7 @@ def main(page: ft.Page):
                         controls=[
                             ft.Icon(ft.Icons.NOTE_ALT_OUTLINED, size=48, color=ft.Colors.GREY_600),
                             ft.Text("Nessuna nota trovata", size=16, color=ft.Colors.GREY_500),
-                            ft.Text("Registra una nota sul Pala Note e sincronizza!", size=12, color=ft.Colors.GREY_600),
+                            ft.Text("Registra una nota su ES1 e sincronizza!", size=12, color=ft.Colors.GREY_600),
                         ],
                     ),
                 )
@@ -618,7 +618,7 @@ def main(page: ft.Page):
     app_bar = ft.AppBar(
         leading=ft.Icon(ft.Icons.GRAPHIC_EQ_ROUNDED, color=ft.Colors.PRIMARY),
         leading_width=40,
-        title=ft.Text("Pala Note", weight=ft.FontWeight.BOLD, size=18),
+        title=ft.Text("ES1", weight=ft.FontWeight.BOLD, size=18),
         center_title=False,
         bgcolor=ft.Colors.SURFACE,
         actions=[

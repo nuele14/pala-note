@@ -57,10 +57,12 @@
 #define REC_BUF      (8 * 1024)
 
 /* Storage paths */
-#define NOTES_DIR  "/notes"
-#define INDEX_FILE "/notes/index.csv"
-#define TAG_FILE   "/notes/tags.txt"
-#define MAX_TAGS   20
+#define NOTES_DIR        "/notes"
+#define SCREENSAVERS_DIR "/screensavers"
+#define SOUNDS_DIR       "/sounds"
+#define INDEX_FILE       "/notes/index.csv"
+#define TAG_FILE         "/notes/tags.txt"
+#define MAX_TAGS         20
 
 /* UI timing */
 #define REC_HOLD_MS         350
@@ -75,8 +77,8 @@
 #define BAT_RECOVER_THRESHOLD  20
 
 /* Time & firmware */
-#define LOCAL_TIME_OFFSET_MIN  120   // UTC+2 (Germany summer). Set to your offset.
-#define FIRMWARE_VERSION       "v1.3"
-#define FW_VERSION             "v1.3"
+#define LOCAL_TIME_OFFSET_MIN  120   // UTC+2 (Italy summer). Set to your offset.
+#define FIRMWARE_VERSION       "ES1 v2.0"
+#define FW_VERSION             "ES1 v2.0"
 
 #endif // CONFIG_H

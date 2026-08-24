@@ -8,6 +8,7 @@ typedef enum {
   STATE_TAG_SELECT,
   STATE_SYNC_CONFIRM,
   STATE_MENU,
+  STATE_SHIKAMARU,
   STATE_TAG_BROWSER,
   STATE_NOTE_LIST,
   STATE_NOTE_DETAIL,
@@ -24,7 +25,7 @@ struct NoteEntry { int num; char tag[32]; bool hasText; bool uploaded; };
 
 // Content array sizes — used across notes, ui, and main loop.
 #define DEFAULT_TAG_COUNT 6
-#define MENU_COUNT        4
+#define MENU_COUNT        5
 #define SETTINGS_COUNT    4
 
 extern const char* DEFAULT_TAGS[];

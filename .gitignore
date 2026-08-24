@@ -1,8 +1,11 @@
 # macOS
 .DS_Store
+*.dSYM/
+.AppleDouble
+.LSOverride
 ._*
 
-# Python virtual environments & packages
+# Python Virtual Environments & Cache
 .venv/
 venv/
 env/
@@ -13,12 +16,35 @@ __pycache__/
 *.so
 .pytest_cache/
 .mypy_cache/
+*.egg-info/
+dist/
+build/
 
-# Local runtime data & exports (Desktop client)
+# Local Desktop Client Data & Exports
 desktop_client/data/
 desktop_client/exports/
+desktop_client/screensavers_samples/
+*.sqlite3
+*.db-journal
 
-# IDE & Editor configs
+# Secrets & Credentials
+secrets.h
+firmware/pala_note/secrets.h
+*.env
+*.env.local
+*.key
+*.pem
+credentials.json
+token.json
+
+# Firmware build artifacts
+*.bin
+*.elf
+*.hex
+*.map
+out/
+
+# IDE & Editor files
 .idea/
 .vscode/
 *.swp
@@ -27,13 +53,4 @@ desktop_client/exports/
 # Vercel & Node
 .vercel
 node_modules/
-dist/
 .next/
-
-# Firmware build artifacts
-firmware/pala_note/secrets.h
-*.bin
-*.elf
-*.map
-build/
-out/
