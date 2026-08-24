@@ -33,6 +33,7 @@ void drawNoteCard(int y, int idx, bool active);
 void drawListMenuCard(int y, const char* title, const char* meta, bool active);
 
 // Screens
+void showBootSplash();
 void showIdle();
 void showBatteryLow(int pct);
 void showRecording();

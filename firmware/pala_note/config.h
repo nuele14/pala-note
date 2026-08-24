@@ -71,6 +71,10 @@
 #define ULTRA_SLEEP_MS      120000UL
 #define TICKER_INTERVAL_MS  950
 
+/* Boot splash configuration */
+#define ENABLE_BOOT_SPLASH     true
+#define BOOT_SPLASH_MS         1200
+
 /* Battery warning */
 #define BAT_CHECK_INTERVAL_MS  30000
 #define BAT_LOW_THRESHOLD      15

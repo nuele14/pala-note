@@ -254,6 +254,12 @@ void drawListMenuCard(int y, const char* title, const char* meta, bool active) {
 
 // ─── Screens ──────────────────────────────────────────────────────────────
 
+void showBootSplash() {
+  clearWhite();
+  drawBitmap1BPP(0, 0, logo_bitmap, 200, 200, BLACK);
+  refresh();
+}
+
 void showIdle() {
   clearWhite();
   int batt = readBatteryPercent();
@@ -572,7 +578,13 @@ void showUltraSleepScreen() {
       while (entry) {
         String fname = entry.name();
         if (!entry.isDirectory() && (fname.endsWith(".bin") || fname.endsWith(".BIN"))) {
-          fileList.push_back(String(SCREENSAVERS_DIR) + "/" + fname);
+          String fullPath;
+          if (fname.startsWith("/")) {
+            fullPath = fname;
+          } else {
+            fullPath = String(SCREENSAVERS_DIR) + "/" + fname;
+          }
+          fileList.push_back(fullPath);
         }
         entry = dir.openNextFile();
       }
@@ -598,7 +610,7 @@ void showUltraSleepScreen() {
   }
 
   if (!drawn) {
-    drawProductWordmark(100, 70, BLACK);
+    drawBitmap1BPP(0, 0, logo_bitmap, 200, 200, BLACK);
   }
   refresh();
 }

@@ -215,7 +215,12 @@ void setup() {
 
   loadTags();
   loadIndex();
-  Serial.printf("[SD] %d notes\n", (int)noteIndex.size());
+  #if ENABLE_BOOT_SPLASH
+  if (!wakeToRecRequested) {
+    showBootSplash();
+    delay(BOOT_SPLASH_MS);
+  }
+  #endif
 
   if (wakeToMenuRequested) {
     menuCursor = 0;

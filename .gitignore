@@ -38,7 +38,7 @@ credentials.json
 token.json
 
 # Firmware build artifacts
-*.bin
+firmware/**/*.bin
 *.elf
 *.hex
 *.map
