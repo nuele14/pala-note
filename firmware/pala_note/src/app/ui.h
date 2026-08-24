@@ -39,6 +39,7 @@ void showRecording();
 void showSaved(int num);
 void showTagSelect(int cursor);
 void showMenu(int cursor);
+void showShikamaru(int minutes, int seconds, bool isFocus, int sessionNum, bool isPaused);
 void showTagBrowser(int cursor);
 void showNoteList(int cursor);
 void showNoteDetail(int cursor);

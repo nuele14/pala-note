@@ -46,7 +46,7 @@ extern "C" {
 
 // ─── Content arrays ───────────────────────────────────────────────────────
 const char* DEFAULT_TAGS[]    = { "Note", "Work", "Idea", "Buy", "Private", "Todo" };
-const char* MENU_ITEMS[]     = { "Notes", "Tags", "Sync", "Settings" };
+const char* MENU_ITEMS[]     = { "Notes", "Tags", "Shikamaru", "Sync", "Settings" };
 const char* SETTINGS_ITEMS[] = { "Sounds", "Wi-Fi", "Transfer", "Device" };
 
 // ─── Global variable definitions ─────────────────────────────────────────
@@ -63,6 +63,12 @@ int      settingsCursor = 0;
 bool     soundsOn       = true;
 int      activeFilter   = -1;
 int      lastRecNum     = -1;
+
+bool     shikamaruIsFocus       = true;
+int      shikamaruSession       = 1;
+bool     shikamaruPaused        = true;
+uint32_t shikamaruRemainingSec  = 25 * 60;
+uint32_t shikamaruLastTickMs    = 0;
 
 uint32_t lastActivityMs      = 0;
 bool     wokeFromUltraSleep  = false;
@@ -137,11 +143,21 @@ void startTransferMode() {
   startSyncFlow();
 }
 
+void playShikamaruEndSound() {
+  if (SD_MMC.exists("/sounds/shikamaru.wav")) {
+    playWavFile("/sounds/shikamaru.wav");
+  } else if (SD_MMC.exists("/sounds/pomodoro.wav")) {
+    playWavFile("/sounds/pomodoro.wav");
+  } else {
+    soundShikamaruRelax();
+  }
+}
+
 // ─── Setup ────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\n=== Pala Note " FIRMWARE_VERSION " ===");
+  Serial.println("\n=== ES1 (Extransformer Shield Uno) " FIRMWARE_VERSION " ===");
 
   // Load runtime config provisioned by the browser flasher (Wi-Fi, OpenAI key,
   // Pala device key + host). Falls back to secrets.h when not provisioned.
@@ -194,6 +210,9 @@ void setup() {
     while (true) delay(1000);
   }
   if (!SD_MMC.exists(NOTES_DIR)) SD_MMC.mkdir(NOTES_DIR);
+  if (!SD_MMC.exists(SCREENSAVERS_DIR)) SD_MMC.mkdir(SCREENSAVERS_DIR);
+  if (!SD_MMC.exists(SOUNDS_DIR)) SD_MMC.mkdir(SOUNDS_DIR);
+
   loadTags();
   loadIndex();
   Serial.printf("[SD] %d notes\n", (int)noteIndex.size());
@@ -212,7 +231,7 @@ void setup() {
 // ─── Main loop ────────────────────────────────────────────────────────────
 void loop() {
 
-  if (state != STATE_RECORDING && state != STATE_TRANSFER) {
+  if (state != STATE_RECORDING && state != STATE_TRANSFER && !(state == STATE_SHIKAMARU && !shikamaruPaused)) {
     if (millis() - lastActivityMs > ULTRA_SLEEP_MS) {
       enterUltraSleep();
       return;
@@ -326,6 +345,13 @@ void loop() {
         state = STATE_TAG_BROWSER;
         showTagBrowser(tagCursor);
       } else if (menuCursor == 2) {
+        shikamaruIsFocus = true;
+        shikamaruSession = 1;
+        shikamaruPaused = true;
+        shikamaruRemainingSec = 25 * 60;
+        state = STATE_SHIKAMARU;
+        showShikamaru(25, 0, true, 1, true);
+      } else if (menuCursor == 3) {
         startSyncFlow();
       } else {
         settingsCursor = 0;
@@ -336,6 +362,65 @@ void loop() {
       soundBack();
       state = STATE_IDLE;
       showIdle();
+    }
+  }
+
+  // SHIKAMARU (Pomodoro Focus Timer) ───────────────────────────────────
+  else if (state == STATE_SHIKAMARU) {
+    ButtonEvent rec = readButtonEvent(BTN_REC);
+    ButtonEvent pwr = readButtonEvent(BTN_PWR);
+
+    if (pwr == EV_SINGLE || pwr == EV_LONG) {
+      soundBack();
+      state = STATE_MENU;
+      showMenu(menuCursor);
+    } else if (rec == EV_SINGLE) {
+      shikamaruPaused = !shikamaruPaused;
+      soundSelect();
+      shikamaruLastTickMs = millis();
+      showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
+                    shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+    } else if (rec == EV_LONG) {
+      soundSelect();
+      if (shikamaruIsFocus) {
+        shikamaruIsFocus = false;
+        shikamaruRemainingSec = 5 * 60;
+      } else {
+        shikamaruIsFocus = true;
+        shikamaruSession = (shikamaruSession % 4) + 1;
+        shikamaruRemainingSec = 25 * 60;
+      }
+      shikamaruPaused = true;
+      showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
+                    shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+    }
+
+    // Timer countdown
+    if (!shikamaruPaused) {
+      resetActivity();
+      if (millis() - shikamaruLastTickMs >= 1000) {
+        shikamaruLastTickMs = millis();
+        if (shikamaruRemainingSec > 0) {
+          shikamaruRemainingSec--;
+          if ((shikamaruRemainingSec % 10 == 0) || shikamaruRemainingSec <= 5) {
+            showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
+                          shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+          }
+        } else {
+          playShikamaruEndSound();
+          if (shikamaruIsFocus) {
+            shikamaruIsFocus = false;
+            shikamaruRemainingSec = 5 * 60;
+          } else {
+            shikamaruIsFocus = true;
+            shikamaruSession = (shikamaruSession % 4) + 1;
+            shikamaruRemainingSec = 25 * 60;
+          }
+          shikamaruPaused = true;
+          showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
+                        shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+        }
+      }
     }
   }
 

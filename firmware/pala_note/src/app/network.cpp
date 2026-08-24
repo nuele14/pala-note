@@ -32,7 +32,7 @@ String getDeviceId() {
 String getSoftApSsid() {
   uint64_t mac = ESP.getEfuseMac();
   char buf[32];
-  snprintf(buf, sizeof(buf), "PalaNote-%04X", (uint16_t)(mac & 0xFFFF));
+  snprintf(buf, sizeof(buf), "ES1-%04X", (uint16_t)(mac & 0xFFFF));
   return String(buf);
 }
 
@@ -224,9 +224,9 @@ void handlePortalRoot() {
 
   String html = "<!doctype html><html><head><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                "<title>Pala Note Portal</title>" + portalCss() + "</head><body><div class='wrap'>";
+                "<title>ES1 Portal — Extransformer Shield Uno</title>" + portalCss() + "</head><body><div class='wrap'>";
 
-  html += "<div class='top'><div><h1>pala<br>portal</h1>"
+  html += "<div class='top'><div><h1>ES1<br>portal</h1>"
           "<div class='sub'>local note transfer · <a href=\"/tags\" style=\"color:inherit\">tags</a></div></div>"
           "<div class='pill'>" + String((int)noteIndex.size()) + " notes (" + String(pendingSyncCount()) + " unsynced)</div></div>";
 

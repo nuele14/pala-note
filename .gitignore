@@ -1,8 +1,44 @@
 # macOS
 .DS_Store
+*.dSYM/
+.AppleDouble
+.LSOverride
 
-# Per-component ignores live in cloud/.gitignore and firmware/pala_note/.gitignore.
-# This root file only covers cross-cutting cruft.
+# Python Virtual Environments & Cache
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
 
-# vercel
+# Local Desktop Client Data & Exports
+desktop_client/data/
+desktop_client/exports/
+desktop_client/screensavers_samples/
+*.sqlite3
+*.db-journal
+
+# Secrets & Credentials
+secrets.h
+*.env
+*.env.local
+*.key
+*.pem
+credentials.json
+token.json
+
+# IDE & Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vercel & Node
 .vercel
+node_modules/
+.next/
