@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#7C4DFF</color>
+    <color name="primary_variant">#651FFF</color>
+    <color name="background">#121212</color>
+    <color name="surface">#1E1E1E</color>
+    <color name="surface_container">#2C2C2C</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#AAAAAA</color>
+    <color name="tag_todo">#FFA726</color>
+    <color name="tag_meeting">#AB47BC</color>
+    <color name="tag_idea">#66BB6A</color>
+    <color name="tag_work">#42A5F5</color>
+    <color name="tag_buy">#FFCA28</color>
+    <color name="tag_private">#EC407A</color>
+    <color name="tag_note">#26C6DA</color>
+</resources>

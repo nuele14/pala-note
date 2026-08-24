@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">ES1 Companion</string>
+    <string name="title_notes">Note</string>
+    <string name="title_search">Cerca</string>
+    <string name="title_settings">Impostazioni</string>
+    <string name="sync_button">Sync</string>
+    <string name="connecting_to_device">Connessione a ES1 in corso...</string>
+    <string name="sync_success">Sincronizzazione completata!</string>
+    <string name="sync_failed">Errore di sincronizzazione</string>
+</resources>
