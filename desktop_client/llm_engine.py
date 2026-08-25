@@ -14,6 +14,31 @@ DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b"
 
 
+def detect_voice_trigger(raw_text: str) -> Tuple[str, str]:
+    """
+    Riconosce i voice triggers iniziali pronunciati dall'utente (IT / EN)
+    e rimuove il prefisso dal testo finale per non sporcare il markdown.
+    """
+    trimmed = raw_text.strip()
+    trigger_patterns = [
+        (re.compile(r"^(?:task|todo|to-do|da fare|compito|promemoria|ricordati di|ricordami di|attività)[:\s,-]+", re.IGNORECASE), "Todo"),
+        (re.compile(r"^(?:idea|spunto|intuizione|pensiero|progetto nuovo)[:\s,-]+", re.IGNORECASE), "Idea"),
+        (re.compile(r"^(?:meeting|riunione|colloquio|call|intervista|allineamento)[:\s,-]+", re.IGNORECASE), "Meeting"),
+        (re.compile(r"^(?:spesa|buy|compra|comprare|acquistare|lista spesa|acquisti)[:\s,-]+", re.IGNORECASE), "Buy"),
+        (re.compile(r"^(?:work|lavoro|ufficio|progetto lavoro|task lavoro)[:\s,-]+", re.IGNORECASE), "Work"),
+        (re.compile(r"^(?:private|privato|personale|segreto|diario)[:\s,-]+", re.IGNORECASE), "Private"),
+        (re.compile(r"^(?:note|nota|appunto|scrivi)[:\s,-]+", re.IGNORECASE), "Note"),
+    ]
+    for pattern, tag in trigger_patterns:
+        match = pattern.search(trimmed)
+        if match:
+            clean_body = trimmed[match.end():].strip()
+            if clean_body:
+                clean_body = clean_body[0].upper() + clean_body[1:]
+            return tag, clean_body or trimmed
+    return "Note", trimmed
+
+
 class LLMEngine:
     def __init__(
         self,
@@ -60,19 +85,25 @@ class LLMEngine:
         if len(title) > 50:
             title = title[:47] + "..."
 
-        if tag.lower() == "todo":
+        tag_low = tag.lower()
+        if tag_low == "todo":
             md = f"# {title}\n\n### 📋 Task da completare\n"
             for line in lines:
                 md += f"- [ ] {line.capitalize()}.\n"
             return md
-        elif tag.lower() == "meeting":
+        elif tag_low == "meeting":
             md = f"# {title}\n\n## 📝 Verbale Riunione\n"
             for line in lines:
                 md += f"- {line.capitalize()}.\n"
             md += "\n## ✅ Action Items\n- [ ] Definire prossimi passi.\n"
             return md
-        elif tag.lower() == "idea":
+        elif tag_low == "idea":
             md = f"# 💡 {title}\n\n## Concetto\n{raw_text}\n\n## Spunti\n- Valutare fattibilità ed implementazione.\n"
+            return md
+        elif tag_low == "buy":
+            md = f"# 🛒 {title}\n\n### Lista della Spesa\n"
+            for line in lines:
+                md += f"- [ ] {line.capitalize()}\n"
             return md
         else:
             md = f"# {title}\n\n"
@@ -129,11 +160,14 @@ class LLMEngine:
             logger.warning(f"Nessuna trascrizione disponibile per la nota {note_id}. Esegui prima STT.")
             return None
 
-        tag = note.get("tag", "Untagged")
         raw_text = transcription["raw_text"]
 
-        logger.info(f"Elaborazione nota #{note.get('device_note_num')} (Tag: {tag})...")
-        title, content_md, model_used, duration_ms = self.elaborate_text(tag, raw_text, custom_prompt)
+        # Voice Trigger detection automatica
+        detected_tag, clean_user_text = detect_voice_trigger(raw_text)
+        tag = detected_tag if (not note.get("tag") or note.get("tag") in ("Untagged", "Note", "Voice")) else note.get("tag", "Note")
+
+        logger.info(f"Elaborazione nota #{note.get('device_note_num')} (Voice Trigger: {tag})...")
+        title, content_md, model_used, duration_ms = self.elaborate_text(tag, clean_user_text, custom_prompt)
 
         rule = self.db.get_tag_rule(tag)
         elab_id = self.db.add_elaboration(

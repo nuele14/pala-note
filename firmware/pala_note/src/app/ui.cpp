@@ -9,6 +9,9 @@
 #include "provisioning.h"
 #include "rtc.h"
 #include "../../logo_bitmap.h"
+#include "../../ready_bitmap.h"
+#include "../../recording_bitmap.h"
+#include "../../pomodoro_bitmap.h"
 #include "../../sounds.h"
 #include "SD_MMC.h"
 
@@ -262,11 +265,20 @@ void showBootSplash() {
 
 void showIdle() {
   clearWhite();
+  #if USE_CUSTOM_READY_BITMAP
+  drawBitmap1BPP(0, 0, ready_bitmap, 200, 200, BLACK);
+  #if SHOW_BATTERY_ON_READY
+  int batt = readBatteryPercent();
+  char bbuf[8]; snprintf(bbuf, sizeof(bbuf), "%d%%", batt);
+  drawStr(165, 8, bbuf, 1, BLACK);
+  #endif
+  #else
   int batt = readBatteryPercent();
   drawBatteryRing(batt);
   drawProductWordmark(100, 58, BLACK);
   fillCircle(100, 123, 5, BLACK);
   drawStrC(100, 144, "ready", 1, BLACK);
+  #endif
   refresh();
 }
 
@@ -282,8 +294,13 @@ void showBatteryLow(int pct) {
 }
 
 void showRecording() {
+  #if USE_CUSTOM_RECORDING_BITMAP
+  clearWhite();
+  drawBitmap1BPP(0, 0, recording_bitmap, 200, 200, BLACK);
+  #else
   fillRect(0, 0, W, H, BLACK);
   fillCircle(W/2, H/2, 27, WHITE);
+  #endif
   refresh();
 }
 
@@ -331,52 +348,64 @@ void showMenu(int cursor) {
   refresh();
 }
 
-void showShikamaru(int minutes, int seconds, bool isFocus, int sessionNum, bool isPaused) {
+void showShikamaru(int remainingSec, bool isFocus, int sessionNum, bool isPaused) {
   clearWhite();
-  // Header
-  drawStr(16, 12, "shikamaru", 1, BLACK);
-  drawStrFit(120, 12, 64, isFocus ? "FOCUS" : "REST", 1, BLACK);
-  hline(16, 26, W - 32, BLACK);
 
-  // Mode badge
-  if (isFocus) {
-    fillRoundRect(36, 36, 128, 24, 12, BLACK);
-    char sessBuf[24];
-    snprintf(sessBuf, sizeof(sessBuf), "FOCUS #%d", sessionNum);
-    drawStrInBox(36, 36, 128, 24, sessBuf, 1, WHITE);
+  // 1. Immagine Pomodoro al centro (200x200 1-bit)
+  #if USE_CUSTOM_POMODORO_BITMAP
+  drawBitmap1BPP(0, 0, pomodoro_bitmap, 200, 200, BLACK);
+  #else
+  fillCircle(100, 75, 36, BLACK);
+  fillRect(96, 32, 8, 12, BLACK);
+  #endif
+
+  // 2. Formattazione tempo (in basso a sinistra in grande)
+  char timeBuf[12];
+  if (remainingSec >= 60) {
+    int mins = (remainingSec + 59) / 60;
+    snprintf(timeBuf, sizeof(timeBuf), "%dm", mins);
+  } else if (remainingSec > 0) {
+    if (remainingSec >= 50)      snprintf(timeBuf, sizeof(timeBuf), ":50");
+    else if (remainingSec >= 40) snprintf(timeBuf, sizeof(timeBuf), ":40");
+    else if (remainingSec >= 30) snprintf(timeBuf, sizeof(timeBuf), ":30");
+    else if (remainingSec >= 20) snprintf(timeBuf, sizeof(timeBuf), ":20");
+    else if (remainingSec >= 10) snprintf(timeBuf, sizeof(timeBuf), ":10");
+    else                         snprintf(timeBuf, sizeof(timeBuf), ":%02d", remainingSec);
   } else {
-    strokeRoundRect(36, 36, 128, 24, 12, 2, BLACK);
-    drawStrInBox(36, 36, 128, 24, "SHORT BREAK", 1, BLACK);
+    snprintf(timeBuf, sizeof(timeBuf), "fine");
   }
 
-  // Giant Timer Digits (e.g. "24:59")
-  char timeBuf[16];
-  snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", minutes, seconds);
-  drawStrC(100, 78, timeBuf, 3, BLACK);
+  // 3. Maschera bianca inferiore per leggibilità e contrasto perfetto dei testi
+  fillRect(0, 154, W, 46, WHITE);
+  hline(0, 154, W, BLACK);
 
-  // Status & session dots
-  if (isPaused) {
-    drawStrC(100, 134, "[ PAUSED ]", 1, BLACK);
-  } else {
-    int gap = 18, startX = 100 - (3 * gap) / 2;
-    for (int i = 1; i <= 4; i++) {
-      int x = startX + (i - 1) * gap;
-      if (i < sessionNum || (i == sessionNum && !isFocus)) {
-        fillCircle(x, 138, 5, BLACK);
-      } else if (i == sessionNum && isFocus) {
-        fillCircle(x, 138, 5, BLACK);
-        strokeCircle(x, 138, 7, 1, BLACK);
-      } else {
-        strokeCircle(x, 138, 5, 1, BLACK);
-      }
+  // In basso a sinistra in grande (timeBuf)
+  drawStr(12, 160, timeBuf, 2, BLACK);
+
+  // In basso a destra: 4 pallini per i round
+  int startX = 146, gap = 11, dy = 168;
+  for (int i = 1; i <= 4; i++) {
+    int x = startX + (i - 1) * gap;
+    if (i < sessionNum || (i == sessionNum && !isFocus)) {
+      fillCircle(x, dy, 4, BLACK);
+    } else if (i == sessionNum && isFocus) {
+      fillCircle(x, dy, 4, BLACK);
+      strokeCircle(x, dy, 6, 1, BLACK);
+    } else {
+      strokeCircle(x, dy, 4, 1, BLACK);
     }
   }
 
-  // Footer hints
-  hline(0, 179, W, BLACK);
-  drawStr(8, 186, isPaused ? "start" : "pause", 1, BLACK);
-  int rw = textW("menu", 1);
-  drawStr(W - 8 - rw, 186, "menu", 1, BLACK);
+  // In centro in piccolo sotto (stato)
+  const char* statusStr;
+  if (isPaused) {
+    statusStr = "pause";
+  } else if (isFocus) {
+    statusStr = "...deep focus...";
+  } else {
+    statusStr = "...break...";
+  }
+  drawStrC(100, 184, statusStr, 1, BLACK);
 
   refresh();
 }
@@ -663,28 +692,33 @@ void showSyncMode(const char* ssid, const char* ip, int pending) {
 
 void showSettings(int cursor) {
   clearWhite();
-  drawStr(16, 14, "settings", 1, BLACK);
-  hline(16, 32, W-32, BLACK);
-  const int y0 = 42, step = 38, boxH = 32;
+  drawStr(16, 12, "settings", 1, BLACK);
+  hline(16, 26, W-32, BLACK);
+  const int y0 = 32, step = 28, boxH = 24;
   for (int row = 0; row < SETTINGS_COUNT; row++) {
     bool active = row == cursor;
     int y = y0 + row * step;
-    if (active) fillRoundRect(16, y, 168, boxH, 8, BLACK);
-    else        strokeRoundRect(16, y, 168, boxH, 8, 1, BLACK);
+    if (active) fillRoundRect(16, y, 168, boxH, 6, BLACK);
+    else        strokeRoundRect(16, y, 168, boxH, 6, 1, BLACK);
     uint8_t col = active ? WHITE : BLACK;
     if (row == 0) {
-      drawStr(28, y + 8, "sounds", 1, col);
-      drawStr(W - 64, y + 8, palaSoundIsEnabled() ? "on" : "off", 1, col);
+      drawStr(26, y + 6, "sounds", 1, col);
+      drawStr(W - 64, y + 6, palaSoundIsEnabled() ? "on" : "off", 1, col);
     } else if (row == 1) {
-      drawStr(28, y + 8, "wi-fi", 1, col);
+      drawStr(26, y + 6, "clean synced", 1, col);
+      char b[12];
+      snprintf(b, sizeof(b), "%d ready", syncedNotesCount());
+      drawStr(W - 80, y + 6, b, 1, col);
+    } else if (row == 2) {
+      drawStr(26, y + 6, "wi-fi", 1, col);
       char b[10];
       if (palaHasSecondNet()) snprintf(b, sizeof(b), "net %d", palaActiveNet() + 1);
       else                    snprintf(b, sizeof(b), "net 1");
-      drawStr(W - 74, y + 8, b, 1, col);
-    } else if (row == 2) {
-      drawStr(28, y + 8, "transfer", 1, col);
+      drawStr(W - 74, y + 6, b, 1, col);
+    } else if (row == 3) {
+      drawStr(26, y + 6, "transfer", 1, col);
     } else {
-      drawStr(28, y + 8, "device", 1, col);
+      drawStr(26, y + 6, "device", 1, col);
     }
   }
   refresh();

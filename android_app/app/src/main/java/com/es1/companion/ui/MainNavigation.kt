@@ -167,7 +167,8 @@ fun MainNavigation(
                 )
                 2 -> SettingsScreen(
                     tagRules = tagRules,
-                    onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) }
+                    onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
+                    onCleanDeviceMemory = { viewModel.cleanDeviceMemory() }
                 )
             }
         }
@@ -180,6 +181,7 @@ fun MainNavigation(
                 onToggleAudio = { viewModel.toggleAudio(note) },
                 onExportMarkdown = { viewModel.exportMarkdown(note) },
                 onReElaborate = { viewModel.reElaborateNote(note) },
+                onDeleteNote = { viewModel.deleteNote(note) },
                 onDismiss = { viewModel.closeNoteDetail() }
             )
         }

@@ -22,6 +22,9 @@ interface ES1ApiService {
     @POST("/api/notes/ack")
     suspend fun sendAck(@Query("num") noteNum: Int): Response<ResponseBody>
 
+    @POST("/api/notes/clean_synced")
+    suspend fun cleanSyncedNotes(): Response<ResponseBody>
+
     @POST("/api/sync/done")
     suspend fun notifySyncDone(): Response<ResponseBody>
 }

@@ -142,7 +142,17 @@ void handleApiNoteAck() {
   }
 
   markUploaded(num);
+  #if AUTO_CLEAN_SYNCED_NOTES
+  deleteNote(num);
+  #endif
   String resp = "{\"status\":\"ok\",\"num\":" + String(num) + ",\"synced\":true}";
+  transferServer.sendHeader("Access-Control-Allow-Origin", "*");
+  transferServer.send(200, "application/json", resp);
+}
+
+void handleApiCleanSynced() {
+  int cleaned = cleanSyncedNotes();
+  String resp = "{\"status\":\"ok\",\"cleaned_count\":" + String(cleaned) + "}";
   transferServer.sendHeader("Access-Control-Allow-Origin", "*");
   transferServer.send(200, "application/json", resp);
 }
@@ -440,8 +450,9 @@ void setupTransferServer() {
   transferServer.on("/api/info",        HTTP_GET,  handleApiInfo);
   transferServer.on("/api/notes",       HTTP_GET,  handleApiNotes);
   transferServer.on("/api/notes/audio", HTTP_GET,  handleApiNoteAudio);
-  transferServer.on("/api/notes/ack",   HTTP_ANY,  handleApiNoteAck);
-  transferServer.on("/api/sync/done",   HTTP_ANY,  handleApiSyncDone);
+  transferServer.on("/api/notes/ack",          HTTP_ANY,  handleApiNoteAck);
+  transferServer.on("/api/notes/clean_synced", HTTP_ANY,  handleApiCleanSynced);
+  transferServer.on("/api/sync/done",          HTTP_ANY,  handleApiSyncDone);
 
   // Web portal routes
   transferServer.on("/",                HTTP_GET,  handlePortalRoot);

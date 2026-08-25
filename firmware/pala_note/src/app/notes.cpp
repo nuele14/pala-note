@@ -129,6 +129,33 @@ void deleteNote(int num) {
   saveIndex();
 }
 
+int cleanSyncedNotes() {
+  int cleaned = 0;
+  for (int i = (int)noteIndex.size() - 1; i >= 0; i--) {
+    if (noteIndex[i].uploaded) {
+      int num = noteIndex[i].num;
+      const char* exts[] = {"wav", "txt", "meta", nullptr};
+      char path[64];
+      for (int e = 0; exts[e]; e++) {
+        snprintf(path, sizeof(path), "%s/note_%03d.%s", NOTES_DIR, num, exts[e]);
+        if (SD_MMC.exists(path)) SD_MMC.remove(path);
+      }
+      noteIndex.erase(noteIndex.begin() + i);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) saveIndex();
+  return cleaned;
+}
+
+int syncedNotesCount() {
+  int count = 0;
+  for (int i = 0; i < (int)noteIndex.size(); i++) {
+    if (noteIndex[i].uploaded) count++;
+  }
+  return count;
+}
+
 int nextNoteNumber() {
   int maxNum = 0;
   for (int i=0; i<(int)noteIndex.size(); i++) if (noteIndex[i].num > maxNum) maxNum = noteIndex[i].num;

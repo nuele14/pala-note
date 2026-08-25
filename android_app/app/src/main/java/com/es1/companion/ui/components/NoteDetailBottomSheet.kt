@@ -57,6 +57,7 @@ fun NoteDetailBottomSheet(
     onToggleAudio: () -> Unit,
     onExportMarkdown: () -> Unit,
     onReElaborate: () -> Unit,
+    onDeleteNote: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -228,43 +229,54 @@ fun NoteDetailBottomSheet(
                 }
             }
 
-            // Action Buttons: Export & Re-elaborate
+            // Action Buttons: Delete, Export & Re-elaborate
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(
-                    onClick = onExportMarkdown,
-                    shape = RoundedCornerShape(10.dp)
-                ) {
+                IconButton(onClick = onDeleteNote) {
                     Icon(
-                        imageVector = Icons.Rounded.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = "Elimina nota",
+                        tint = Color(0xFFEF5350)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Esporta .MD", fontSize = 12.sp)
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Button(
-                    onClick = onReElaborate,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Rielabora", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    OutlinedButton(
+                        onClick = onExportMarkdown,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Esporta", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = onReElaborate,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Rielabora", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

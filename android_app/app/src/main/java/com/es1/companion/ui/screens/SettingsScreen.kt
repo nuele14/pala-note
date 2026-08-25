@@ -51,6 +51,7 @@ import com.es1.companion.ui.theme.getTagColor
 fun SettingsScreen(
     tagRules: List<TagRuleEntity>,
     onSaveTagRule: (String, String) -> Unit,
+    onCleanDeviceMemory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val expandedMap = remember { mutableStateMapOf<String, Boolean>() }
@@ -68,6 +69,42 @@ fun SettingsScreen(
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
         )
+
+        // Maintenance & Cleaning Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "🧹 Manutenzione Dispositivo ES1",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Elimina dalla memoria SD dell'ES1 i file audio WAV delle note già sincronizzate per liberare spazio.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                Button(
+                    onClick = onCleanDeviceMemory,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary
+                    )
+                ) {
+                    Text("Pulisci Note Sincronizzate su ES1", fontSize = 12.sp)
+                }
+            }
+        }
 
         // Engine specs card
         Card(

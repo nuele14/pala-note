@@ -149,17 +149,38 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun exportMarkdown(note: NoteEntity) {
+    fun deleteNote(note: NoteEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Elimina file audio locale se esiste
+            val audioFile = File(note.audioLocalPath)
+            if (audioFile.exists()) audioFile.delete()
+
+            noteDao.deleteNote(note)
+            withContext(Dispatchers.Main) {
+                if (_selectedNote.value?.id == note.id) {
+                    closeNoteDetail()
+                }
+                Toast.makeText(getApplication(), "Nota eliminata", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun cleanDeviceMemory() {
         viewModelScope.launch {
-            val path = withContext(Dispatchers.IO) {
-                exporter.exportNoteEntity(note)
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val api = syncManager.getApiService()
+                    val response = api.cleanSyncedNotes()
+                    response.isSuccessful
+                } catch (e: Exception) {
+                    false
+                }
             }
             withContext(Dispatchers.Main) {
-                if (path != null) {
-                    val name = File(path).name
-                    Toast.makeText(getApplication(), "Esportato: $name", Toast.LENGTH_SHORT).show()
+                if (result) {
+                    Toast.makeText(getApplication(), "Memoria ES1 pulita con successo!", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(getApplication(), "Errore durante l'esportazione", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(getApplication(), "Connettiti alla rete ES1 per pulire la memoria", Toast.LENGTH_SHORT).show()
                 }
             }
         }

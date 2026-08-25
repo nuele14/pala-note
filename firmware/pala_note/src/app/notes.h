@@ -10,6 +10,8 @@ int    pendingSyncCount();
 size_t noteAudioFileSize(int num);
 float  noteAudioDurationSec(int num);
 void   deleteNote(int num);
+int    cleanSyncedNotes();
+int    syncedNotesCount();
 int    nextNoteNumber();
 void   saveTag(int num, const char* tag);
 

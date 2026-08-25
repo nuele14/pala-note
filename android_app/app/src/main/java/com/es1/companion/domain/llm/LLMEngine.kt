@@ -12,6 +12,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
+data class VoiceTagResult(
+    val tag: String,
+    val cleanBody: String
+)
+
 class LLMEngine(
     private val context: Context,
     private val noteDao: NoteDao
@@ -21,8 +26,6 @@ class LLMEngine(
     private var ollamaModel: String = "qwen2.5:1.5b"
 
     suspend fun elaborateNote(noteId: String): NoteEntity? = withContext(Dispatchers.IO) {
-        val notes = noteDao.getAllNotes()
-        // Find note
         val note = noteDao.getPendingElaborations().find { it.id == noteId }
             ?: return@withContext null
 
@@ -32,23 +35,28 @@ class LLMEngine(
             return@withContext null
         }
 
-        val tagRule = noteDao.getTagRule(note.tag)
+        // 1. Riconoscimento vocale automatico del Tag dalle prime parole pronunciate
+        val voiceResult = detectVoiceTrigger(rawText)
+        val assignedTag = voiceResult.tag
+        val cleanUserText = voiceResult.cleanBody
+
+        val tagRule = noteDao.getTagRule(assignedTag)
         val prompt = tagRule?.systemPrompt ?: "Rielabora e struttura questa nota vocale in modo chiaro."
 
-        Log.d(TAG, "Elaborating note #${note.deviceNoteNum} (Tag: ${note.tag})...")
+        Log.d(TAG, "Elaborating note #${note.deviceNoteNum} (Voice Trigger Tag: $assignedTag)...")
 
-        // 1. Prova con Ollama se configurato
+        // 2. Prova con Ollama (se configurato) o fallback su motore euristico locale
         var result = if (!ollamaHost.isNullOrBlank()) {
-            callOllama(ollamaHost!!, ollamaModel, prompt, rawText)
+            callOllama(ollamaHost!!, ollamaModel, prompt, cleanUserText)
         } else null
 
-        // 2. Fallback Euristico Locale ad altissima affidabilità
         if (result == null) {
-            result = applyHeuristicElaboration(note.tag, rawText)
+            result = applyHeuristicElaboration(assignedTag, cleanUserText)
         }
 
-        val title = extractTitle(rawText, result)
+        val title = extractTitle(cleanUserText, result)
         val updatedNote = note.copy(
+            tag = assignedTag,
             elaboratedTitle = title,
             elaboratedMarkdown = result
         )
@@ -67,15 +75,52 @@ class LLMEngine(
         return@withContext count
     }
 
-    private fun applyHeuristicElaboration(tag: String, rawText: String): String {
-        val cleanText = rawText.trim()
+    /**
+     * Riconosce i voice triggers iniziali pronunciati dall'utente (IT / EN)
+     * e rimuove il prefisso dal testo finale per non sporcare il markdown.
+     */
+    fun detectVoiceTrigger(rawText: String): VoiceTagResult {
+        val trimmed = rawText.trim()
+
+        val triggerPatterns = listOf(
+            Pair(Regex("^(?:task|todo|to-do|da fare|compito|promemoria|ricordati di|ricordami di|attività)[:\\s,-]+", RegexOption.IGNORE_CASE), "Todo"),
+            Pair(Regex("^(?:idea|spunto|intuizione|pensiero|progetto nuovo)[:\\s,-]+", RegexOption.IGNORE_CASE), "Idea"),
+            Pair(Regex("^(?:meeting|riunione|colloquio|call|intervista|allineamento)[:\\s,-]+", RegexOption.IGNORE_CASE), "Meeting"),
+            Pair(Regex("^(?:spesa|buy|compra|comprare|acquistare|lista spesa|acquisiti)[:\\s,-]+", RegexOption.IGNORE_CASE), "Buy"),
+            Pair(Regex("^(?:work|lavoro|ufficio|progetto lavoro|task lavoro)[:\\s,-]+", RegexOption.IGNORE_CASE), "Work"),
+            Pair(Regex("^(?:private|privato|personale|segreto|diario)[:\\s,-]+", RegexOption.IGNORE_CASE), "Private"),
+            Pair(Regex("^(?:note|nota|appunto|scrivi)[:\\s,-]+", RegexOption.IGNORE_CASE), "Note")
+        )
+
+        for ((regex, tag) in triggerPatterns) {
+            val match = regex.find(trimmed)
+            if (match != null) {
+                val remaining = trimmed.substring(match.range.last + 1).trim()
+                val capitalized = remaining.replaceFirstChar {
+                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                }
+                return VoiceTagResult(
+                    tag = tag,
+                    cleanBody = if (capitalized.isNotBlank()) capitalized else trimmed
+                )
+            }
+        }
+
+        // Nessun prefisso esplicito: default su "Note"
+        return VoiceTagResult(
+            tag = "Note",
+            cleanBody = trimmed
+        )
+    }
+
+    private fun applyHeuristicElaboration(tag: String, cleanText: String): String {
         val sentences = cleanText.split(Regex("[.!?\n]+"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
         return when (tag.lowercase()) {
             "todo" -> {
-                val sb = StringBuilder()
+                val sb = StringBuilder("### ✅ Cose da fare\n\n")
                 for (s in sentences) {
                     val cap = s.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
                     sb.append("- [ ] $cap.\n")
@@ -124,9 +169,10 @@ class LLMEngine(
                 """.trimIndent()
             }
             "buy" -> {
-                val sb = StringBuilder("### 🛒 Lista Acquisti\n\n")
+                val sb = StringBuilder("### 🛒 Lista della Spesa\n\n")
                 for (s in sentences) {
-                    sb.append("- [ ] $s\n")
+                    val cap = s.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                    sb.append("- [ ] $cap\n")
                 }
                 sb.toString().trimEnd()
             }
@@ -145,8 +191,8 @@ class LLMEngine(
         }
     }
 
-    private fun extractTitle(rawText: String, markdown: String): String {
-        val firstLine = rawText.split(Regex("[.!?\n]")).firstOrNull()?.trim() ?: "Nota"
+    private fun extractTitle(cleanText: String, markdown: String): String {
+        val firstLine = cleanText.split(Regex("[.!?\n]")).firstOrNull()?.trim() ?: "Nota"
         val clean = firstLine.take(45).replace(Regex("[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ -]"), "")
         return clean.ifBlank { "Nota Registrata" }
     }

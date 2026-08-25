@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.es1.companion.data.local.NoteEntity
 import com.es1.companion.ui.components.NoteCard
-import com.es1.companion.ui.components.TagChipsRow
+import com.es1.companion.ui.components.TagFilterDropdown
 
 @Composable
 fun FeedScreen(
@@ -39,15 +39,16 @@ fun FeedScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        // Tag Filter Chips Row
-        TagChipsRow(
+        // Dropdown Filter Selector (Default: Tutte le note)
+        TagFilterDropdown(
             selectedTag = selectedTag,
+            totalNotesCount = notes.size,
             onTagSelected = onTagSelected
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         if (notes.isEmpty()) {
             // Empty State
@@ -68,20 +69,20 @@ fun FeedScreen(
                         modifier = Modifier.size(54.dp)
                     )
                     Text(
-                        text = "Nessuna nota trovata",
+                        text = if (selectedTag == "All") "Nessuna nota presente" else "Nessuna nota con tag '$selectedTag'",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.LightGray
                     )
                     Text(
-                        text = "Registra una nota su ES1 e sincronizza!",
+                        text = "Registra una nota vocale su ES1 e sincronizza!",
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
                 }
             }
         } else {
-            // Notes List
+            // Complete Notes List Feed
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),

@@ -72,8 +72,17 @@
 #define TICKER_INTERVAL_MS  950
 
 /* Boot splash configuration */
-#define ENABLE_BOOT_SPLASH     true
-#define BOOT_SPLASH_MS         1200
+#define ENABLE_BOOT_SPLASH           true
+#define BOOT_SPLASH_MS               1200
+
+/* Custom Bitmaps UI (ready_bitmap.h, recording_bitmap.h, pomodoro_bitmap.h) */
+#define USE_CUSTOM_READY_BITMAP      true   // Mostra ready_bitmap in showIdle()
+#define USE_CUSTOM_RECORDING_BITMAP  true   // Mostra recording_bitmap in showRecording()
+#define USE_CUSTOM_POMODORO_BITMAP   true   // Mostra pomodoro_bitmap in showShikamaru()
+#define SHOW_BATTERY_ON_READY        false  // true: mostra batteria in angolo | false: grafica 100% pulita
+
+/* Clean Synced Notes */
+#define AUTO_CLEAN_SYNCED_NOTES      false  // true: elimina subito da SD dopo sincronizzazione ACK
 
 /* Battery warning */
 #define BAT_CHECK_INTERVAL_MS  30000

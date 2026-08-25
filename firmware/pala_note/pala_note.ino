@@ -46,8 +46,8 @@ extern "C" {
 
 // ─── Content arrays ───────────────────────────────────────────────────────
 const char* DEFAULT_TAGS[]    = { "Note", "Work", "Idea", "Buy", "Private", "Todo" };
-const char* MENU_ITEMS[]     = { "Notes", "Tags", "Shikamaru", "Sync", "Settings" };
-const char* SETTINGS_ITEMS[] = { "Sounds", "Wi-Fi", "Transfer", "Device" };
+const char* MENU_ITEMS[]     = { "Notes", "Shikamaru", "Sync", "Settings" };
+const char* SETTINGS_ITEMS[] = { "Sounds", "Clean Synced", "Wi-Fi", "Transfer", "Device" };
 
 // ─── Global variable definitions ─────────────────────────────────────────
 board_power_bsp_t      board(EPD_PWR_PIN, Audio_PWR_PIN, VBAT_PWR_PIN);
@@ -127,9 +127,8 @@ void startRecordFlow() {
   showSaved(lastRecNum);
   delay(900);
 
-  tagCursor = min(2, max(tagCount - 1, 0));
-  state = STATE_TAG_SELECT;
-  showTagSelect(tagCursor);
+  state = STATE_IDLE;
+  showIdle();
 }
 
 void startSyncFlow() {
@@ -346,17 +345,13 @@ void loop() {
         state = STATE_NOTE_LIST;
         showNoteList(listCursor);
       } else if (menuCursor == 1) {
-        tagCursor = 0;
-        state = STATE_TAG_BROWSER;
-        showTagBrowser(tagCursor);
-      } else if (menuCursor == 2) {
         shikamaruIsFocus = true;
         shikamaruSession = 1;
         shikamaruPaused = true;
         shikamaruRemainingSec = 25 * 60;
         state = STATE_SHIKAMARU;
-        showShikamaru(25, 0, true, 1, true);
-      } else if (menuCursor == 3) {
+        showShikamaru(shikamaruRemainingSec, true, 1, true);
+      } else if (menuCursor == 2) {
         startSyncFlow();
       } else {
         settingsCursor = 0;
@@ -383,8 +378,7 @@ void loop() {
       shikamaruPaused = !shikamaruPaused;
       soundSelect();
       shikamaruLastTickMs = millis();
-      showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
-                    shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+      showShikamaru(shikamaruRemainingSec, shikamaruIsFocus, shikamaruSession, shikamaruPaused);
     } else if (rec == EV_LONG) {
       soundSelect();
       if (shikamaruIsFocus) {
@@ -396,8 +390,7 @@ void loop() {
         shikamaruRemainingSec = 25 * 60;
       }
       shikamaruPaused = true;
-      showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
-                    shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+      showShikamaru(shikamaruRemainingSec, shikamaruIsFocus, shikamaruSession, shikamaruPaused);
     }
 
     // Timer countdown
@@ -407,11 +400,22 @@ void loop() {
         shikamaruLastTickMs = millis();
         if (shikamaruRemainingSec > 0) {
           shikamaruRemainingSec--;
-          if ((shikamaruRemainingSec % 10 == 0) || shikamaruRemainingSec <= 5) {
-            showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
-                          shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+          bool needRefresh = false;
+          // Quando mancano >= 60s: aggiorna ogni minuto esatto (es. 24:00, 23:00, ...)
+          if (shikamaruRemainingSec >= 60 && (shikamaruRemainingSec % 60 == 0)) {
+            needRefresh = true;
+          }
+          // Durante l'ultimo minuto (< 60s): aggiorna a :50, :40, :30, :20, :10
+          else if (shikamaruRemainingSec < 60 && (shikamaruRemainingSec % 10 == 0)) {
+            needRefresh = true;
+          }
+
+          if (needRefresh) {
+            showShikamaru(shikamaruRemainingSec, shikamaruIsFocus, shikamaruSession, shikamaruPaused);
           }
         } else {
+          // Timer completato (fine)
+          showShikamaru(0, shikamaruIsFocus, shikamaruSession, true);
           playShikamaruEndSound();
           if (shikamaruIsFocus) {
             shikamaruIsFocus = false;
@@ -422,8 +426,7 @@ void loop() {
             shikamaruRemainingSec = 25 * 60;
           }
           shikamaruPaused = true;
-          showShikamaru(shikamaruRemainingSec / 60, shikamaruRemainingSec % 60,
-                        shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+          showShikamaru(shikamaruRemainingSec, shikamaruIsFocus, shikamaruSession, shikamaruPaused);
         }
       }
     }
@@ -444,10 +447,15 @@ void loop() {
         palaSoundSetEnabled(!palaSoundIsEnabled());
         showSettings(settingsCursor);
       } else if (settingsCursor == 1) {
+        int cleaned = cleanSyncedNotes();
+        if (cleaned > 0) soundDelete();
+        else             soundBack();
+        showSettings(settingsCursor);
+      } else if (settingsCursor == 2) {
         // Wi-Fi: switch the default network (only meaningful with two configured).
         if (palaHasSecondNet()) palaSetActiveNet(palaActiveNet() ^ 1);
         showSettings(settingsCursor);
-      } else if (settingsCursor == 2) {
+      } else if (settingsCursor == 3) {
         startTransferMode();
       } else {
         state = STATE_DEVICE_INFO;

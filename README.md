@@ -25,12 +25,13 @@ Shikamaru incarna la filosofia di questo dispositivo: massima concentrazione e l
 * **🎙️ Registratore Vocale Ultra-Rapido**: Premi `REC` e registra note istantanee salvate su MicroSD in WAV 16kHz non compresso.
 * **⏱️ Timer "Shikamaru" Integrato**: Modalità Pomodoro autonoma sul display (25 min Focus / 5 min Pausa) con conteggio delle sessioni e jingle sonoro rilassante.
 * **🖼️ Screensaver E-Paper a Consumo Zero (0.0 µA)**: Durante l'inattività, il display mostra a rotazione citazioni motivazionali e grafiche 1-bit caricate dalla cartella `/screensavers/` su MicroSD.
-* **📡 Sincronizzazione SoftAP Locale (`ES1-XXXX`)**: Connessione Wi-Fi diretta tra Mac/PC/Smartphone e dispositivo (`192.168.4.1`) a zero dipendenza cloud.
+* **🎨 Grafiche Firmware Ufficiali & Modulari**: Schermate dedicate per **Boot Splash** (`logo_bitmap.h`), stato **Ready / Idle** (`ready_bitmap.h`) e stato **Recording** (`recording_bitmap.h`).
+* **📡 Sincronizzazione SoftAP Locale (`ES1-XXXX`)**: Connessione Wi-Fi diretta tra Mac/PC/Smartphone Android e dispositivo (`192.168.4.1`) a zero dipendenza cloud.
 * **🧠 Pipeline Edge AI Locale**:
   * **STT**: Sbobinatura ultra-veloce con `faster-whisper` (modello int8, ~350ms per nota).
   * **LLM**: Revisione intelligente basata sui tag (*Todo, Meeting, Idea, Work, Buy, Private, Note*) con `Ollama` (`qwen2.5:1.5b`) o fallback euristico.
   * **FTS5 Search & Export**: Ricerca full-text istantanea ed esportazione automatica in Markdown con frontmatter YAML.
-* **🎨 Material 3 Desktop GUI**: Interfaccia grafica fluida sviluppata in Flet, con player audio nativo e gestione prompt.
+* **📱 Client Desktop (Flet) & Android (Jetpack Compose)**: Interfaccia grafica fluida con player audio nativo e gestione prompt.
 
 ---
 
@@ -58,6 +59,40 @@ Shikamaru incarna la filosofia di questo dispositivo: massima concentrazione e l
 
 ---
 
+## 🎨 Gestione Grafiche & Tool di Conversione (`img_to_screensaver.py`)
+
+Il tool Python permette sia di convertire immagini per la MicroSD sia di esportarle direttamente come **file header C++ (`.h`)** per il firmware dell'ESP32.
+
+```bash
+cd desktop_client
+source .venv/bin/activate
+
+# 1. Esporta una nuova grafica nel firmware dell'ESP32
+python tools/img_to_screensaver.py mio_logo.png --to-header logo        # Aggiorna logo_bitmap.h (Boot & Fallback)
+python tools/img_to_screensaver.py mia_ready.png --to-header ready      # Aggiorna ready_bitmap.h (Schermata Idle)
+python tools/img_to_screensaver.py mia_rec.png --to-header recording    # Aggiorna recording_bitmap.h (Registrazione)
+
+# 2. Converti immagini per gli Screensavers su MicroSD (5,000 bytes 1-bit)
+python tools/img_to_screensaver.py wallpaper.jpg --sd /Volumes/UNONOTE/screensavers
+
+# 3. Genera 4 screensaver motivazionali di esempio
+python tools/img_to_screensaver.py --samples
+```
+
+### ⚙️ Flag Parametrici nel Firmware (`config.h`)
+
+Puoi personalizzare e attivare/disattivare il rendering delle grafiche in [`firmware/pala_note/config.h`](firmware/pala_note/config.h):
+
+```cpp
+#define ENABLE_BOOT_SPLASH           true   // Mostra lo splash screen all'accensione (1.2s)
+#define BOOT_SPLASH_MS               1200   // Durata splash screen
+#define USE_CUSTOM_READY_BITMAP      true   // Usa ready_bitmap.h per la schermata di Idle
+#define USE_CUSTOM_RECORDING_BITMAP  true   // Usa recording_bitmap.h per la schermata di Registrazione
+#define SHOW_BATTERY_ON_READY        false  // true: mostra batteria in angolo | false: grafica 100% pulita
+```
+
+---
+
 ## 🚀 Guida Rapida
 
 ### 1. Avvio della Desktop GUI (Flet)
@@ -68,22 +103,7 @@ source .venv/bin/activate
 python app_gui.py
 ```
 
-### 2. Conversione Immagini per Screensaver E-Paper (200x200 1-bit)
-
-Puoi convertire qualsiasi immagine (`.png`, `.jpg`, `.bmp`, `.webp`) nel formato nativo per il display:
-
-```bash
-# Converti una singola immagine
-python tools/img_to_screensaver.py mia_immagine.png
-
-# Converti e copia direttamente sulla MicroSD montata
-python tools/img_to_screensaver.py wallpaper.jpg --sd /Volumes/UNONOTE/screensavers
-
-# Genera automaticamente 4 screensaver con citazioni minimaliste
-python tools/img_to_screensaver.py --samples
-```
-
-### 3. Utilizzo del Timer "Shikamaru" sul Dispositivo
+### 2. Utilizzo del Timer "Shikamaru" sul Dispositivo
 
 1. Dal menu principale di **ES1**, seleziona **"Shikamaru"**.
 2. **Click `REC`**: Avvia / Mette in pausa il conto alla rovescia.
@@ -97,9 +117,10 @@ python tools/img_to_screensaver.py --samples
 
 | Cartella / File | Descrizione |
 |---|---|
-| [`firmware/pala_note/`](firmware/pala_note) | Firmware ESP32-S3 in C++/Arduino per ES1 (E-Paper, Audio ES8311, SoftAP, Shikamaru). |
+| [`firmware/pala_note/`](firmware/pala_note) | Firmware ESP32-S3 in C++/Arduino per ES1 (E-Paper, Audio ES8311, SoftAP, Shikamaru, Grafiche Modulari). |
+| [`android_app/`](android_app) | Applicazione nativa Android in Kotlin + Jetpack Compose (Material 3, Room FTS5, SoftAP Sync). |
 | [`desktop_client/`](desktop_client) | Host locale Python (Sync, STT Whisper, LLM, DB SQLite, GUI Flet). |
-| [`desktop_client/tools/`](desktop_client/tools) | Tool CLI per conversione screensaver e utilità di gestione. |
+| [`desktop_client/tools/`](desktop_client/tools) | Tool CLI per conversione screensaver ed export header C++ (`--to-header logo\|ready\|recording`). |
 | [`hardware/`](hardware) | File 3D e case per il dispositivo (STEP + 3MF). |
 | [`docs/`](docs) | Specifiche architetturali e manuali di sistema. |
 
