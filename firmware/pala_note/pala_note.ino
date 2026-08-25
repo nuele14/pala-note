@@ -275,7 +275,7 @@ void loop() {
     }
   }
 
-  // Periodic battery check
+  // Periodic battery check & Low Battery Alert (< 15%)
   if (state != STATE_RECORDING && !audioPlaying && !batWarnActive) {
     if (millis() - lastBatCheckMs > BAT_CHECK_INTERVAL_MS) {
       lastBatCheckMs = millis();
@@ -284,12 +284,24 @@ void loop() {
         batLowWarned        = true;
         batWarnActive       = true;
         batWarnShowUntilMs  = millis() + 2500;
+        soundBatteryLow();
         showBatteryLow(pct);
       } else if (pct > BAT_RECOVER_THRESHOLD) {
         batLowWarned = false;
       }
     }
   }
+
+  // Low Battery LED Beacon Pulse (ogni 60 secondi per 20ms)
+  #if STATUS_LED_PIN >= 0
+  static uint32_t lastLedPulseMs = 0;
+  if (batLowWarned && (millis() - lastLedPulseMs >= BAT_LOW_LED_PULSE_MS)) {
+    lastLedPulseMs = millis();
+    digitalWrite(STATUS_LED_PIN, HIGH);
+    delay(BAT_LOW_LED_FLASH_MS);
+    digitalWrite(STATUS_LED_PIN, LOW);
+  }
+  #endif
 
   // IDLE ─────────────────────────────────────────────────────────────────
   if (state == STATE_IDLE) {

@@ -335,6 +335,7 @@ void showTagSelect(int cursor) {
 void showMenu(int cursor) {
   clearWhite();
   drawStr(16, 12, "menu", 1, BLACK);
+  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
   hline(16, 26, W-32, BLACK);
   const int y0 = 34, step = 28, itemH = 25;
   for (int row = 0; row < MENU_COUNT; row++) {
@@ -438,10 +439,9 @@ void showNoteList(int cursor) {
   }
   clearWhite();
   int count = filteredCount();
-  char cb[16]; snprintf(cb, sizeof(cb), "%d notes", count);
-  drawStr(16, 14, "notes", 1, BLACK);
-  int cw = textW(cb, 1);
-  drawStr(W-16-cw, 14, cb, 1, BLACK);
+  char cb[16]; snprintf(cb, sizeof(cb), "notes (%d)", count);
+  drawStr(16, 14, cb, 1, BLACK);
+  drawBatteryMicroBadge(154, 14, readBatteryPercent(), BLACK);
   if (count <= 0) {
     drawMinimalDocIcon(100, 76, BLACK);
     drawStrC(100, 116, "no notes yet", 1, BLACK);
@@ -472,8 +472,8 @@ void showNoteDetail(int cursor) {
   char n[8]; snprintf(n, sizeof(n), "#%03d", noteIndex[idx].num);
   drawStr(16, 14, n, 1, BLACK);
   String tagLabel = normalizeForDisplay(String(noteIndex[idx].tag));
-  int tw = textW(tagLabel.c_str(), 1);
-  drawStrFit(W-16-min(tw, 82), 14, 82, tagLabel.c_str(), 1, BLACK);
+  drawStr(56, 14, tagLabel.c_str(), 1, BLACK);
+  drawBatteryMicroBadge(154, 14, readBatteryPercent(), BLACK);
   hline(16, 32, W-32, BLACK);
 
   if (noteIndex[idx].hasText) {
@@ -693,6 +693,7 @@ void showSyncMode(const char* ssid, const char* ip, int pending) {
 void showSettings(int cursor) {
   clearWhite();
   drawStr(16, 12, "settings", 1, BLACK);
+  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
   hline(16, 26, W-32, BLACK);
   const int y0 = 32, step = 28, boxH = 24;
   for (int row = 0; row < SETTINGS_COUNT; row++) {
@@ -726,15 +727,27 @@ void showSettings(int cursor) {
 
 void showDeviceInfo() {
   clearWhite();
-  drawStr(16, 14, "device", 1, BLACK);
-  hline(16, 32, W-32, BLACK);
-  drawStr(18, 50, "firmware", 1, BLACK);
-  drawStrFit(18, 68, 160, FIRMWARE_VERSION, 1, BLACK);
-  drawStr(18, 94, "board", 1, BLACK);
-  drawStrFit(18, 112, 160, "ESP32-S3 ePaper 1.54", 1, BLACK);
-  char b[24]; snprintf(b, sizeof(b), "%d notes", (int)noteIndex.size());
-  drawStr(18, 138, b, 1, BLACK);
-  drawStr(18, 160, palaSoundIsEnabled() ? "sounds on" : "sounds off", 1, BLACK);
-  drawStr(18, 178, rtcUtcIso().length() ? "rtc set" : "rtc not set", 1, BLACK);
+  drawStr(16, 12, "device", 1, BLACK);
+  int batt = readBatteryPercent();
+  float vbat = readBatteryVoltage();
+  drawBatteryMicroBadge(154, 12, batt, BLACK);
+  hline(16, 26, W-32, BLACK);
+
+  drawStr(18, 38, "firmware", 1, BLACK);
+  drawStrFit(18, 52, 160, FIRMWARE_VERSION, 1, BLACK);
+
+  drawStr(18, 72, "battery & runtime", 1, BLACK);
+  char batBuf[36];
+  String runtime = estimateBatteryRuntime(batt, vbat);
+  snprintf(batBuf, sizeof(batBuf), "%d%% (%.2fV) • %s", batt, vbat, runtime.c_str());
+  drawStrFit(18, 86, 164, batBuf, 1, BLACK);
+
+  drawStr(18, 106, "board", 1, BLACK);
+  drawStrFit(18, 120, 160, "ESP32-S3 ePaper 1.54", 1, BLACK);
+
+  char b[24]; snprintf(b, sizeof(b), "%d notes memorized", (int)noteIndex.size());
+  drawStr(18, 142, b, 1, BLACK);
+  drawStr(18, 162, palaSoundIsEnabled() ? "sounds: on" : "sounds: off", 1, BLACK);
+  drawStr(18, 180, rtcUtcIso().length() ? "rtc: synchronized" : "rtc: local", 1, BLACK);
   refresh();
 }

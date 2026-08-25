@@ -65,3 +65,50 @@ void drawBatteryRing(int percent) {
   for (int deg = 0; deg <= endDeg; deg += 2)
     drawThickArcDot(cx, cy, r, deg, 3, BLACK);
 }
+
+void drawBatteryMicroBadge(int x, int y, int pct, uint8_t color) {
+  if (pct < 0) return;
+  pct = constrain(pct, 0, 100);
+
+  // 1. Numero percentuale a sinistra
+  char pbuf[8];
+  snprintf(pbuf, sizeof(pbuf), "%d%%", pct);
+  int pw = textW(pbuf, 1);
+  drawStr(x - 4 - pw, y + 1, pbuf, 1, color);
+
+  // 2. Icona batteria: rettangolo 18x9 + polo 2x5
+  strokeRect(x, y, 18, 9, 1, color);
+  fillRect(x + 18, y + 2, 2, 5, color);
+
+  // 3. Le 3 tacche interne graduate
+  if (pct >= 70) {
+    // 3 tacche piene
+    fillRect(x + 2,  y + 2, 4, 5, color);
+    fillRect(x + 7,  y + 2, 4, 5, color);
+    fillRect(x + 12, y + 2, 4, 5, color);
+  } else if (pct >= 35) {
+    // 2 tacche piene
+    fillRect(x + 2,  y + 2, 4, 5, color);
+    fillRect(x + 7,  y + 2, 4, 5, color);
+  } else if (pct >= 15) {
+    // 1 sola tacca
+    fillRect(x + 2,  y + 2, 4, 5, color);
+  }
+  // Sotto il 15%: tutte le 3 tacche sono vuote [□□□] per alert visivo
+}
+
+String estimateBatteryRuntime(int pct, float vbat) {
+  if (pct <= 0) return "0 ore";
+  if (pct >= 20) {
+    float days = (pct * 7.0f) / 100.0f;
+    char b[16];
+    snprintf(b, sizeof(b), "~%.1f gg", days);
+    return String(b);
+  } else {
+    int hours = (pct * 24 * 7) / 100;
+    if (hours < 1) hours = 1;
+    char b[16];
+    snprintf(b, sizeof(b), "~%d ore", hours);
+    return String(b);
+  }
+}

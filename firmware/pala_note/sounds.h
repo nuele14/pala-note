@@ -147,3 +147,13 @@ inline void soundShikamaruRelax() {
   playToneUI(792.0f, 130, 0.06f);
   soundDisable();
 }
+
+// Low battery warning earcon (2-tone descending)
+inline void soundBatteryLow() {
+  if (!palaSoundEnabled) return;
+  soundEnable();
+  playToneUI(480.0f, 50, 0.12f);
+  delay(20);
+  playToneUI(240.0f, 90, 0.10f);
+  soundDisable();
+}
