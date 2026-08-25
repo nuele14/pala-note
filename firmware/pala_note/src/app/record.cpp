@@ -3,6 +3,7 @@
 #include "../../globals.h"
 #include "../../types.h"
 #include "record.h"
+#include "led.h"
 #include "SD_MMC.h"
 #include "esp_heap_caps.h"
 #include "notes.h"
@@ -32,6 +33,7 @@ bool record() {
   uint32_t totalMono=0, t0=millis();
 
   while (digitalRead(BTN_REC)==LOW || millis()-t0 < 500) {
+    ledUpdate();
     audio_playback_read((void*)sbuf, REC_BUF);
     int mono = REC_BUF/4;
     for (int i=0;i<mono;i++) mbuf[i] = sbuf[i*2];

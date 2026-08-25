@@ -84,13 +84,19 @@
 /* Clean Synced Notes */
 #define AUTO_CLEAN_SYNCED_NOTES      false  // true: elimina subito da SD dopo sincronizzazione ACK
 
+/* LED Status & Battery Indicators */
+#define ENABLE_STATUS_LEDS           true
+#define LED_RED_PIN                  GPIO_NUM_1   // Imposta pin GPIO del LED Rosso
+#define LED_GREEN_PIN                GPIO_NUM_2   // Imposta pin GPIO del LED Verde
+#define LED_ACTIVE_LEVEL             HIGH         // HIGH = acceso a 3.3V, LOW = active-low
+#define LED_REC_BLINK_INTERVAL_MS    350          // Velocità lampeggio registrazione (ms)
+
 /* Battery warning & Low Power LED Beacon */
 #define BAT_CHECK_INTERVAL_MS        30000
 #define BAT_LOW_THRESHOLD            15
 #define BAT_RECOVER_THRESHOLD        20
 #define BAT_LOW_LED_PULSE_MS         60000UL // Beacon LED ogni 60 secondi
 #define BAT_LOW_LED_FLASH_MS         20      // Micro-impulso di 20ms a bassissimo consumo
-#define STATUS_LED_PIN               -1      // Imposta GPIO se presente LED (es. 38 o -1)
 
 /* Time & firmware */
 #define LOCAL_TIME_OFFSET_MIN  120   // UTC+2 (Italy summer). Set to your offset.

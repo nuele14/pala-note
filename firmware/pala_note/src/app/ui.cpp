@@ -432,32 +432,65 @@ void showTagBrowser(int cursor) {
 }
 
 void showNoteList(int cursor) {
-  if (tickerCursor != cursor) {
-    tickerCursor = cursor;
-    tickerOffset = 0;
-    tickerLastMs = millis();
-  }
   clearWhite();
   int count = filteredCount();
-  char cb[16]; snprintf(cb, sizeof(cb), "notes (%d)", count);
-  drawStr(16, 14, cb, 1, BLACK);
-  drawBatteryMicroBadge(154, 14, readBatteryPercent(), BLACK);
+  char cb[20]; snprintf(cb, sizeof(cb), "notes (%d)", count);
+  drawStr(16, 12, cb, 1, BLACK);
+  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
+  hline(16, 26, W - 32, BLACK);
+
   if (count <= 0) {
     drawMinimalDocIcon(100, 76, BLACK);
     drawStrC(100, 116, "no notes yet", 1, BLACK);
+    hline(0, 168, W, BLACK);
+    fillRect(0, 169, W, 31, WHITE);
+    drawStrC(100, 182, "press any key: back", 1, BLACK);
     refresh();
     return;
   }
-  const int pageSize = 3;
+
+  const int pageSize = 5;
   int pageStart = (cursor / pageSize) * pageSize;
   int activeRow = cursor - pageStart;
-  const int y0 = 43, step = 47;
+  const int y0 = 32, step = 25, itemH = 22;
   int shown = min(pageSize, count - pageStart);
-  for (int row=0; row<shown; row++) {
+
+  for (int row = 0; row < shown; row++) {
     int vis = pageStart + row;
     int idx = noteAtFilteredIndex(vis);
-    if (idx >= 0) drawNoteCard(y0 + row*step, idx, row == activeRow);
+    if (idx < 0) continue;
+
+    bool active = (row == activeRow);
+    int y = y0 + row * step;
+    uint8_t col = active ? WHITE : BLACK;
+
+    if (active) {
+      fillRoundRect(16, y, 168, itemH, 5, BLACK);
+    }
+
+    char n[8]; snprintf(n, sizeof(n), "#%03d", noteIndex[idx].num);
+    drawStr(active ? 22 : 18, y + 5, n, 1, col);
+
+    String tagLabel = normalizeForDisplay(String(noteIndex[idx].tag));
+    drawStrFit(active ? 68 : 64, y + 5, 76, tagLabel.c_str(), 1, col);
+
+    if (noteIndex[idx].hasText) {
+      drawStr(W - 38, y + 5, "txt", 1, col);
+    } else {
+      drawStr(W - 38, y + 5, "wav", 1, col);
+    }
   }
+
+  // Footer legend: rec play, long del, pwr next
+  hline(0, 164, W, BLACK);
+  fillRect(0, 165, W, 35, WHITE);
+  drawStr(12, 171, "rec: play", 1, BLACK);
+  int hdw = textW("hold: del", 1);
+  drawStr(W - 12 - hdw, 171, "hold: del", 1, BLACK);
+  drawStr(12, 185, "2x: txt", 1, BLACK);
+  int pnw = textW("pwr: next", 1);
+  drawStr(W - 12 - pnw, 185, "pwr: next", 1, BLACK);
+
   refresh();
 }
 
@@ -695,33 +728,49 @@ void showSettings(int cursor) {
   drawStr(16, 12, "settings", 1, BLACK);
   drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
   hline(16, 26, W-32, BLACK);
-  const int y0 = 32, step = 28, boxH = 24;
+
+  const int y0 = 32, step = 25, itemH = 22;
   for (int row = 0; row < SETTINGS_COUNT; row++) {
-    bool active = row == cursor;
+    bool active = (row == cursor);
     int y = y0 + row * step;
-    if (active) fillRoundRect(16, y, 168, boxH, 6, BLACK);
-    else        strokeRoundRect(16, y, 168, boxH, 6, 1, BLACK);
     uint8_t col = active ? WHITE : BLACK;
+
+    if (active) {
+      fillRoundRect(16, y, 168, itemH, 5, BLACK);
+    }
+
     if (row == 0) {
-      drawStr(26, y + 6, "sounds", 1, col);
-      drawStr(W - 64, y + 6, palaSoundIsEnabled() ? "on" : "off", 1, col);
+      drawStr(active ? 22 : 18, y + 5, "sounds", 1, col);
+      drawStr(W - 48, y + 5, palaSoundIsEnabled() ? "on" : "off", 1, col);
     } else if (row == 1) {
-      drawStr(26, y + 6, "clean synced", 1, col);
+      drawStr(active ? 22 : 18, y + 5, "clean synced", 1, col);
       char b[12];
       snprintf(b, sizeof(b), "%d ready", syncedNotesCount());
-      drawStr(W - 80, y + 6, b, 1, col);
+      int bw = textW(b, 1);
+      drawStr(W - 22 - bw, y + 5, b, 1, col);
     } else if (row == 2) {
-      drawStr(26, y + 6, "wi-fi", 1, col);
+      drawStr(active ? 22 : 18, y + 5, "wi-fi", 1, col);
       char b[10];
       if (palaHasSecondNet()) snprintf(b, sizeof(b), "net %d", palaActiveNet() + 1);
       else                    snprintf(b, sizeof(b), "net 1");
-      drawStr(W - 74, y + 6, b, 1, col);
+      int bw = textW(b, 1);
+      drawStr(W - 22 - bw, y + 5, b, 1, col);
     } else if (row == 3) {
-      drawStr(26, y + 6, "transfer", 1, col);
+      drawStr(active ? 22 : 18, y + 5, "transfer", 1, col);
+      drawStr(W - 68, y + 5, "sd-mmc", 1, col);
     } else {
-      drawStr(26, y + 6, "device", 1, col);
+      drawStr(active ? 22 : 18, y + 5, "device", 1, col);
+      drawStr(W - 58, y + 5, "info >", 1, col);
     }
   }
+
+  // Footer legend
+  hline(0, 168, W, BLACK);
+  fillRect(0, 169, W, 31, WHITE);
+  drawStr(12, 180, "rec: select/toggle", 1, BLACK);
+  int pnw = textW("pwr: next", 1);
+  drawStr(W - 12 - pnw, 180, "pwr: next", 1, BLACK);
+
   refresh();
 }
 

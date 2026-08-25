@@ -41,6 +41,7 @@ extern "C" {
 #include "src/app/network.h"
 #include "src/app/sleep.h"
 #include "src/app/record.h"
+#include "src/app/led.h"
 
 // All pin, timing, path and threshold constants live in config.h.
 
@@ -107,11 +108,13 @@ void keepBatteryPowerOn() {
 // ─── Flow functions ───────────────────────────────────────────────────────
 void startRecordFlow() {
   state = STATE_RECORDING;
+  ledSetRecording(true);
   showRecording();
 
   palaSoundSetEnabled(false);
   bool recOk = record();
   palaSoundSetEnabled(true);
+  ledSetRecording(false);
 
   if (!recOk) {
     showError("REC FAIL");
@@ -202,6 +205,7 @@ void setup() {
 
   audio_bsp_init();
   audio_play_init();
+  ledInit();
 
   SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
   if (!SD_MMC.begin("/sdcard", true)) {
@@ -275,11 +279,14 @@ void loop() {
     }
   }
 
-  // Periodic battery check & Low Battery Alert (< 15%)
+  // Periodic battery check, Charging LED state & Low Battery Alert (< 15%)
   if (state != STATE_RECORDING && !audioPlaying && !batWarnActive) {
     if (millis() - lastBatCheckMs > BAT_CHECK_INTERVAL_MS) {
       lastBatCheckMs = millis();
       int pct = readBatteryPercent();
+      float vbat = readBatteryVoltage();
+      ledCheckChargingStatus(pct, vbat);
+
       if (pct >= 0 && pct <= BAT_LOW_THRESHOLD && !batLowWarned) {
         batLowWarned        = true;
         batWarnActive       = true;
@@ -292,16 +299,8 @@ void loop() {
     }
   }
 
-  // Low Battery LED Beacon Pulse (ogni 60 secondi per 20ms)
-  #if STATUS_LED_PIN >= 0
-  static uint32_t lastLedPulseMs = 0;
-  if (batLowWarned && (millis() - lastLedPulseMs >= BAT_LOW_LED_PULSE_MS)) {
-    lastLedPulseMs = millis();
-    digitalWrite(STATUS_LED_PIN, HIGH);
-    delay(BAT_LOW_LED_FLASH_MS);
-    digitalWrite(STATUS_LED_PIN, LOW);
-  }
-  #endif
+  // Update LED states (blinking / solid)
+  ledUpdate();
 
   // IDLE ─────────────────────────────────────────────────────────────────
   if (state == STATE_IDLE) {
@@ -544,23 +543,47 @@ void loop() {
     ButtonEvent pwr = readButtonEvent(BTN_PWR);
     int count = filteredCount();
 
-    if (pwr == EV_SINGLE && count > 0) {
+    if (count <= 0) {
+      if (pwr != EV_NONE || rec != EV_NONE) {
+        soundBack();
+        state = STATE_MENU;
+        showMenu(menuCursor);
+      }
+      return;
+    }
+
+    if (pwr == EV_SINGLE) {
       soundNext();
       listCursor = (listCursor + 1) % count;
       showNoteList(listCursor);
-    } else if (pwr == EV_DOUBLE && count > 0) {
-      soundNext();
-      listCursor = (listCursor - 1 + count) % count;
-      showNoteList(listCursor);
-    } else if (rec == EV_SINGLE && count > 0) {
+    } else if (pwr == EV_DOUBLE || pwr == EV_LONG) {
+      soundBack();
+      state = STATE_MENU;
+      showMenu(menuCursor);
+    } else if (rec == EV_SINGLE) {
+      // RIPRODUZIONE AUDIO SU SELEZIONE
+      int idx = noteAtFilteredIndex(listCursor);
+      if (idx >= 0) {
+        char wavPath[64];
+        snprintf(wavPath, sizeof(wavPath), "%s/note_%03d.wav", NOTES_DIR, noteIndex[idx].num);
+        showPlaybackOverlay();
+        playWavFile(wavPath);
+        showNoteList(listCursor);
+      }
+    } else if (rec == EV_LONG) {
+      // ELIMINAZIONE SU SELEZIONE
+      int idx = noteAtFilteredIndex(listCursor);
+      if (idx >= 0) {
+        soundSelect();
+        state = STATE_DELETE_CONFIRM;
+        showDeleteConfirm(noteIndex[idx].num);
+      }
+    } else if (rec == EV_DOUBLE) {
+      // APRE DETTAGLIO TESTO / TXT
       soundSelect();
       detailScrollPage = 0;
       state = STATE_NOTE_DETAIL;
       showNoteDetail(listCursor);
-    } else if (rec == EV_LONG || rec == EV_DOUBLE) {
-      soundBack();
-      state = STATE_MENU;
-      showMenu(menuCursor);
     }
   }
 

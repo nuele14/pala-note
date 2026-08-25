@@ -66,33 +66,76 @@ void drawBatteryRing(int percent) {
     drawThickArcDot(cx, cy, r, deg, 3, BLACK);
 }
 
+// Micro-font 3×5 pixel per cifre '0'-'9' e '%'
+static const uint16_t MICRO_DIGITS[11] = {
+  0b111101101101111, // 0
+  0b010110010010111, // 1
+  0b111001111100111, // 2
+  0b111001111001111, // 3
+  0b101101111001001, // 4
+  0b111100111001111, // 5
+  0b111100111101111, // 6
+  0b111001001010010, // 7
+  0b111101111101111, // 8
+  0b111101111001111, // 9
+  0b101001010100101  // % (idx 10)
+};
+
+static void drawMicroChar(int x, int y, char c, uint8_t color) {
+  int idx = -1;
+  if (c >= '0' && c <= '9') idx = c - '0';
+  else if (c == '%')        idx = 10;
+  if (idx < 0) return;
+
+  uint16_t mask = MICRO_DIGITS[idx];
+  for (int row = 0; row < 5; row++) {
+    for (int col = 0; col < 3; col++) {
+      int bit = 14 - (row * 3 + col);
+      if ((mask >> bit) & 1) {
+        px(x + col, y + row, color);
+      }
+    }
+  }
+}
+
+static int drawMicroStr(int x, int y, const char* s, uint8_t color) {
+  int curX = x;
+  while (*s) {
+    drawMicroChar(curX, y, *s, color);
+    curX += 4; // 3 pixel width + 1 pixel gap
+    s++;
+  }
+  return curX - x;
+}
+
 void drawBatteryMicroBadge(int x, int y, int pct, uint8_t color) {
   if (pct < 0) return;
   pct = constrain(pct, 0, 100);
 
-  // 1. Numero percentuale a sinistra
+  // 1. Numero percentuale a sinistra con micro-font 3×5 (altezza 5px)
   char pbuf[8];
   snprintf(pbuf, sizeof(pbuf), "%d%%", pct);
-  int pw = textW(pbuf, 1);
-  drawStr(x - 4 - pw, y + 1, pbuf, 1, color);
+  int charCount = strlen(pbuf);
+  int strW = charCount * 4 - 1;
+  drawMicroStr(x - 4 - strW, y + 2, pbuf, color);
 
-  // 2. Icona batteria: rettangolo 18x9 + polo 2x5
-  strokeRect(x, y, 18, 9, 1, color);
-  fillRect(x + 18, y + 2, 2, 5, color);
+  // 2. Icona batteria compatta: rettangolo 16x9 + polo 2x5
+  strokeRect(x, y, 16, 9, 1, color);
+  fillRect(x + 16, y + 2, 2, 5, color);
 
   // 3. Le 3 tacche interne graduate
   if (pct >= 70) {
     // 3 tacche piene
-    fillRect(x + 2,  y + 2, 4, 5, color);
-    fillRect(x + 7,  y + 2, 4, 5, color);
-    fillRect(x + 12, y + 2, 4, 5, color);
+    fillRect(x + 2,  y + 2, 3, 5, color);
+    fillRect(x + 6,  y + 2, 3, 5, color);
+    fillRect(x + 10, y + 2, 3, 5, color);
   } else if (pct >= 35) {
     // 2 tacche piene
-    fillRect(x + 2,  y + 2, 4, 5, color);
-    fillRect(x + 7,  y + 2, 4, 5, color);
+    fillRect(x + 2,  y + 2, 3, 5, color);
+    fillRect(x + 6,  y + 2, 3, 5, color);
   } else if (pct >= 15) {
     // 1 sola tacca
-    fillRect(x + 2,  y + 2, 4, 5, color);
+    fillRect(x + 2,  y + 2, 3, 5, color);
   }
   // Sotto il 15%: tutte le 3 tacche sono vuote [□□□] per alert visivo
 }
