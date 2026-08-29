@@ -47,8 +47,16 @@ import androidx.compose.ui.unit.sp
 import com.es1.companion.data.local.TagRuleEntity
 import com.es1.companion.ui.theme.getTagColor
 
+import androidx.compose.material.icons.rounded.BrightnessAuto
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material3.Surface
+import com.es1.companion.ui.theme.ThemeMode
+
 @Composable
 fun SettingsScreen(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     tagRules: List<TagRuleEntity>,
     onSaveTagRule: (String, String) -> Unit,
     onCleanDeviceMemory: () -> Unit,
@@ -69,6 +77,82 @@ fun SettingsScreen(
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
         )
+
+        // Theme Selection Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "🎨 Aspetto & Tema",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Scegli l'aspetto dell'interfaccia o segui automaticamente il tema del sistema.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val themeOptions = listOf(
+                        Triple(ThemeMode.SYSTEM, "Sistema", Icons.Rounded.BrightnessAuto),
+                        Triple(ThemeMode.LIGHT, "Chiaro", Icons.Rounded.LightMode),
+                        Triple(ThemeMode.DARK, "Scuro", Icons.Rounded.DarkMode)
+                    )
+
+                    themeOptions.forEach { (mode, label, icon) ->
+                        val isSelected = (mode == themeMode)
+                        val containerCol = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                        val contentCol = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onThemeModeChange(mode) },
+                            color = containerCol,
+                            shape = RoundedCornerShape(10.dp),
+                            shadowElevation = if (isSelected) 3.dp else 0.dp
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = label,
+                                    tint = contentCol,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = contentCol
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Maintenance & Cleaning Card
         Card(

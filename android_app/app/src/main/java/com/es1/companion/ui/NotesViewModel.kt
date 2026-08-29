@@ -26,6 +26,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+import android.content.Context
+import com.es1.companion.ui.theme.ThemeMode
+
 class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     private val TAG = "NotesViewModel"
@@ -37,6 +40,22 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val sttEngine = STTEngine(application, noteDao)
     private val llmEngine = LLMEngine(application, noteDao)
     private val exporter = MarkdownExporter(application, noteDao)
+
+    // Theme Mode with persistence
+    private val prefs = application.getSharedPreferences("es1_settings", Context.MODE_PRIVATE)
+    private val _themeMode = MutableStateFlow(
+        try {
+            ThemeMode.valueOf(prefs.getString("theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
+        } catch (e: Exception) {
+            ThemeMode.SYSTEM
+        }
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        prefs.edit().putString("theme_mode", mode.name).apply()
+    }
 
     // Tag filter & search states
     private val _selectedTag = MutableStateFlow("All")

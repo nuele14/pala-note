@@ -72,7 +72,7 @@ fun FeedScreen(
                         text = if (selectedTag == "All") "Nessuna nota presente" else "Nessuna nota con tag '$selectedTag'",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.LightGray
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "Registra una nota vocale su ES1 e sincronizza!",

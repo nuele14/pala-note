@@ -59,6 +59,7 @@ fun MainNavigation(
 
     val selectedNote by viewModel.selectedNote.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
 
     Scaffold(
         topBar = {
@@ -68,7 +69,7 @@ fun MainNavigation(
                         text = "ES1",
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 },
                 navigationIcon = {
@@ -86,7 +87,7 @@ fun MainNavigation(
                         Icon(
                             imageVector = Icons.Rounded.Refresh,
                             contentDescription = "Refresh",
-                            tint = Color.White
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 },
@@ -166,6 +167,8 @@ fun MainNavigation(
                     onNoteClick = { viewModel.openNoteDetail(it) }
                 )
                 2 -> SettingsScreen(
+                    themeMode = themeMode,
+                    onThemeModeChange = { viewModel.setThemeMode(it) },
                     tagRules = tagRules,
                     onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
                     onCleanDeviceMemory = { viewModel.cleanDeviceMemory() }
