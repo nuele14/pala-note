@@ -58,6 +58,8 @@ class ES1SyncManager(private val context: Context) {
         .build()
         .create(ES1ApiService::class.java)
 
+    fun getApiService(): ES1ApiService = apiService
+
     suspend fun performSync(): SyncResult = withContext(Dispatchers.IO) {
         _syncState.value = SyncState.Connecting()
         try {

@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -239,7 +240,7 @@ fun NoteDetailBottomSheet(
             ) {
                 IconButton(onClick = onDeleteNote) {
                     Icon(
-                        imageVector = Icons.Rounded.DeleteOutline,
+                        imageVector = Icons.Rounded.Delete,
                         contentDescription = "Elimina nota",
                         tint = Color(0xFFEF5350)
                     )

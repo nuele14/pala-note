@@ -149,6 +149,19 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun exportMarkdown(note: NoteEntity) {
+        viewModelScope.launch {
+            val path = exporter.exportNoteEntity(note)
+            withContext(Dispatchers.Main) {
+                if (path != null) {
+                    Toast.makeText(getApplication(), "Esportato in: $path", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(getApplication(), "Errore durante l'esportazione", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     fun deleteNote(note: NoteEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             // Elimina file audio locale se esiste

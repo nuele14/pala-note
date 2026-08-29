@@ -6,6 +6,7 @@
 
 ## Info
 - avere un feed per poter leggere gli ultimi  articoli di Hacker news (stile https://github.com/SimonHalvdansson/Harmonic-HN) e Antirez (come con HN andare a scaricare gli ultimi articoli non letti)
+- sarebbe interessante che questa parte diventi un RSS fedd manager (o si agganci ad uno di essi e permetta di inviare articoli di blog sia all ED1 che inviarli anche su kindle (vedi conversazione  su gemini)
 - dall'app di android prendere le statistiche di utilizzo del telefono e di youtube (later)
 - inserire anche le statistiche di fitness (later)
 

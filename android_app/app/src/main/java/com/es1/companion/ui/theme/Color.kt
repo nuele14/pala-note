@@ -16,6 +16,7 @@ val ES1DarkBackground = Color(0xFF121212)
 val ES1DarkCard = Color(0xFF252525)
 val ES1Primary = Color(0xFF7C4DFF)
 val ES1PrimaryVariant = Color(0xFF651FFF)
+val ElectricBlue = Color(0xFF2979FF)
 
 // Tag Colors
 val TagTodo = Color(0xFFFFA726)
