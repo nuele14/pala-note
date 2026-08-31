@@ -28,9 +28,9 @@ void drawCheckSmall(int cx, int cy, uint8_t color);
 void drawMinimalDocIcon(int cx, int cy, uint8_t color);
 void drawMinimalTagIcon(int cx, int cy, uint8_t color);
 void drawMinimalCloudIcon(int cx, int cy, uint8_t color);
-void drawMenuTile(int x, int y, int w, int h, const char* label, int icon, bool active);
-void drawNoteCard(int y, int idx, bool active);
-void drawListMenuCard(int y, const char* title, const char* meta, bool active);
+void drawIconPower(int x, int y, uint8_t color);
+void drawIconTriangle(int x, int y, uint8_t color);
+void drawFooterNav(const char* pwrAction, const char* actAction, const char* holdAction = nullptr);
 
 // Screens
 void showBootSplash();
@@ -43,7 +43,9 @@ void showMenu(int cursor);
 void showShikamaru(int remainingSec, bool isFocus, int sessionNum, bool isPaused);
 void showTagBrowser(int cursor);
 void showNoteList(int cursor);
+void showNoteActions(int cursor, int actionCursor);
 void showNoteDetail(int cursor);
+void showNoteMdReader(int cursor, int pageIndex);
 void showDeleteConfirm(int noteNum);
 void showSyncConfirm(int noteNum);
 void showTranscribing(int done, int total);

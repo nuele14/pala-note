@@ -42,6 +42,7 @@ extern "C" {
 #include "src/app/sleep.h"
 #include "src/app/record.h"
 #include "src/app/led.h"
+#include "src/app/md_reader.h"
 
 // All pin, timing, path and threshold constants live in config.h.
 
@@ -90,6 +91,8 @@ bool stopPlayback = false;
 
 int detailScrollPage = 0;
 int detailTotalLines = 0;
+int mdReaderPage     = 0;
+int noteActionCursor = 0;
 
 uint32_t lastBatCheckMs    = 0;
 bool     batLowWarned      = false;
@@ -123,6 +126,8 @@ void startRecordFlow() {
     showIdle();
     return;
   }
+
+  saveTag(lastRecNum, "Note");
 
   soundSaved();
 
@@ -264,7 +269,9 @@ void loop() {
       case STATE_IDLE:           showIdle();                     break;
       case STATE_MENU:           showMenu(menuCursor);           break;
       case STATE_NOTE_LIST:      showNoteList(listCursor);       break;
+      case STATE_NOTE_ACTIONS:   showNoteActions(listCursor, noteActionCursor); break;
       case STATE_NOTE_DETAIL:    showNoteDetail(listCursor);     break;
+      case STATE_MD_READER:      showNoteMdReader(listCursor, mdReaderPage); break;
       case STATE_TAG_SELECT:     showTagSelect(tagCursor);       break;
       case STATE_SYNC_CONFIRM:   showSyncConfirm(lastRecNum);    break;
       case STATE_TAG_BROWSER:    showTagBrowser(tagCursor);      break;
@@ -553,75 +560,121 @@ void loop() {
     }
 
     if (pwr == EV_SINGLE) {
+      // SCORRE LISTA NOTE
       soundNext();
       listCursor = (listCursor + 1) % count;
       showNoteList(listCursor);
-    } else if (pwr == EV_DOUBLE || pwr == EV_LONG) {
+    } else if (rec == EV_SINGLE) {
+      // APRE MENU AZIONI PER LA NOTA SELEZIONATA
+      soundSelect();
+      noteActionCursor = 0;
+      state = STATE_NOTE_ACTIONS;
+      showNoteActions(listCursor, noteActionCursor);
+    } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
+      // TORNA AL MENU PRINCIPALE
       soundBack();
       state = STATE_MENU;
       showMenu(menuCursor);
+    }
+  }
+
+  // NOTE ACTIONS MENU ───────────────────────────────────────────────────
+  else if (state == STATE_NOTE_ACTIONS) {
+    ButtonEvent rec = readButtonEvent(BTN_REC);
+    ButtonEvent pwr = readButtonEvent(BTN_PWR);
+    int idx = noteAtFilteredIndex(listCursor);
+
+    if (idx < 0) {
+      state = STATE_NOTE_LIST;
+      showNoteList(listCursor);
+      return;
+    }
+
+    if (pwr == EV_SINGLE) {
+      // SCORRE TRA LE 4 AZIONI
+      soundNext();
+      noteActionCursor = (noteActionCursor + 1) % 4;
+      showNoteActions(listCursor, noteActionCursor);
     } else if (rec == EV_SINGLE) {
-      // RIPRODUZIONE AUDIO SU SELEZIONE
-      int idx = noteAtFilteredIndex(listCursor);
-      if (idx >= 0) {
+      // ESEGUE L'AZIONE SELEZIONATA
+      soundSelect();
+      if (noteActionCursor == 0) {
+        // 1. READ (MD)
+        if (noteIndex[idx].hasText || noteIndex[idx].uploaded) {
+          mdReaderPage = 0;
+          state = STATE_MD_READER;
+          showNoteMdReader(listCursor, mdReaderPage);
+        } else {
+          soundNext(); // Feedback not synced yet
+        }
+      } else if (noteActionCursor == 1) {
+        // 2. PLAY AUDIO WAV
         char wavPath[64];
         snprintf(wavPath, sizeof(wavPath), "%s/note_%03d.wav", NOTES_DIR, noteIndex[idx].num);
         showPlaybackOverlay();
         playWavFile(wavPath);
-        showNoteList(listCursor);
-      }
-    } else if (rec == EV_LONG) {
-      // ELIMINAZIONE SU SELEZIONE
-      int idx = noteAtFilteredIndex(listCursor);
-      if (idx >= 0) {
-        soundSelect();
+        showNoteActions(listCursor, noteActionCursor);
+      } else if (noteActionCursor == 2) {
+        // 3. INFO & METADATA
+        state = STATE_NOTE_DETAIL;
+        showNoteDetail(listCursor);
+      } else if (noteActionCursor == 3) {
+        // 4. DELETE NOTE
         state = STATE_DELETE_CONFIRM;
         showDeleteConfirm(noteIndex[idx].num);
       }
-    } else if (rec == EV_DOUBLE) {
-      // APRE DETTAGLIO TESTO / TXT
-      soundSelect();
-      detailScrollPage = 0;
-      state = STATE_NOTE_DETAIL;
-      showNoteDetail(listCursor);
+    } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
+      // TORNA ALLA LISTA DELLE NOTE
+      soundBack();
+      state = STATE_NOTE_LIST;
+      showNoteList(listCursor);
     }
   }
 
-  // NOTE DETAIL ─────────────────────────────────────────────────────────
+  // NOTE DETAIL (INFO & METADATA) ────────────────────────────────────────
   else if (state == STATE_NOTE_DETAIL) {
     ButtonEvent rec = readButtonEvent(BTN_REC);
     ButtonEvent pwr = readButtonEvent(BTN_PWR);
 
-    if (pwr == EV_SINGLE) {
-      soundNext();
-      const int linesPerPage = 7;
-      int totalPages = (detailTotalLines + linesPerPage - 1) / linesPerPage;
-      if (detailScrollPage + 1 < totalPages) {
-        detailScrollPage++;
-      } else {
-        detailScrollPage = 0;
-        int count = filteredCount();
-        if (count > 0) listCursor = (listCursor + 1) % count;
-      }
-      showNoteDetail(listCursor);
-    } else if (rec == EV_SINGLE) {
-      int idx = noteAtFilteredIndex(listCursor);
-      if (idx >= 0) {
-        char wavPath[64];
-        snprintf(wavPath, sizeof(wavPath), "%s/note_%03d.wav", NOTES_DIR, noteIndex[idx].num);
-        showPlaybackOverlay();
-        playWavFile(wavPath);
-        showNoteDetail(listCursor);
-      }
-    } else if (rec == EV_LONG) {
-      int idx = noteAtFilteredIndex(listCursor);
-      if (idx >= 0) {
-        state = STATE_DELETE_CONFIRM;
-        showDeleteConfirm(noteIndex[idx].num);
-      }
-    } else if (rec == EV_DOUBLE) {
+    if (rec == EV_SINGLE || pwr == EV_SINGLE) {
       soundBack();
-      detailScrollPage = 0;
+      state = STATE_NOTE_ACTIONS;
+      showNoteActions(listCursor, noteActionCursor);
+    } else if (rec == EV_LONG || pwr == EV_LONG) {
+      soundBack();
+      state = STATE_NOTE_LIST;
+      showNoteList(listCursor);
+    }
+  }
+
+  // MD DOCUMENT READER ───────────────────────────────────────────────────
+  else if (state == STATE_MD_READER) {
+    ButtonEvent rec = readButtonEvent(BTN_REC);
+    ButtonEvent pwr = readButtonEvent(BTN_PWR);
+    int idx = noteAtFilteredIndex(listCursor);
+
+    if (idx >= 0) {
+      String text = noteTextContent(noteIndex[idx].num);
+      int totalPages = mdCalculateTotalPages(text);
+
+      if (pwr == EV_SINGLE) {
+        // PAGINA SUCCESSIVA
+        soundNext();
+        mdReaderPage = (mdReaderPage + 1) % totalPages;
+        showNoteMdReader(listCursor, mdReaderPage);
+      } else if (rec == EV_SINGLE) {
+        // PAGINA PRECEDENTE
+        soundNext();
+        if (mdReaderPage > 0) mdReaderPage--;
+        else mdReaderPage = max(0, totalPages - 1);
+        showNoteMdReader(listCursor, mdReaderPage);
+      } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
+        // ESCI DAL LETTORE E TORNA AL MENU AZIONI
+        soundBack();
+        state = STATE_NOTE_ACTIONS;
+        showNoteActions(listCursor, noteActionCursor);
+      }
+    } else {
       state = STATE_NOTE_LIST;
       showNoteList(listCursor);
     }
@@ -638,14 +691,13 @@ void loop() {
         deleteNote(noteIndex[idx].num);
         soundDelete();
       }
-      detailScrollPage = 0;
       listCursor = constrain(listCursor, 0, max(filteredCount() - 1, 0));
       state = STATE_NOTE_LIST;
       showNoteList(listCursor);
-    } else if (pwr == EV_SINGLE || rec == EV_DOUBLE || rec == EV_LONG) {
+    } else if (pwr == EV_SINGLE || rec == EV_LONG || rec == EV_DOUBLE || pwr == EV_LONG) {
       soundBack();
-      state = STATE_NOTE_DETAIL;
-      showNoteDetail(listCursor);
+      state = STATE_NOTE_ACTIONS;
+      showNoteActions(listCursor, noteActionCursor);
     }
   }
 

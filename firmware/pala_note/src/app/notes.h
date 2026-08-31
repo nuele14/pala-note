@@ -28,9 +28,13 @@ String readNoteMetaValue(int num, const char* key);
 void   writeNoteMeta(int num, const char* tag);
 
 String noteCreatedUtc(int num);
+String noteSyncedUtc(int num);
 String utcToLocalDeviceLabel(const String& utcIso);
 String noteCreatedDeviceLabel(int num);
+String noteSyncedDeviceLabel(int num);
 String currentUtcIso();
+bool   isNoteUploaded(int num);
+String noteTextContent(int num);
 
 String notePreviewText(int num, size_t maxLen = 90);
 String noteTickerText(int idx);

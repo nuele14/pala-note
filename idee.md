@@ -22,3 +22,11 @@
 	- immagine e rimuovere tutte le cose che non mi interessavano, mettere un numero a lato di una icona a sinistra con il numero del round (lascaire solo il numero) mentre a destra avere i minuti rimanenti
 	- log di concentrazione come i commit di github nell'app android che prende i metadati del pomodoro (da vedere se è un esercizio mentale corretto per me)
 - impegni calendario (later)
+
+## Hardware 
+- bottoni che non ballano: gomino incollato dietro
+- bottoni con colore e incisione diversa: da rimodellare e ristampare
+- includere modifiche effettuate nel modello per l'asola 
+- capire come conviene avere i componenti interni separati (disposti)
+- gestione del gap (incollarlo, viti..se si dove)
+- ristampare in qualità più alta

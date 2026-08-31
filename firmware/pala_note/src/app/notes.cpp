@@ -11,28 +11,77 @@
 
 void loadIndex() {
   noteIndex.clear();
-  File f = SD_MMC.open(INDEX_FILE);
-  if (!f) return;
-  while (f.available()) {
-    String ln = f.readStringUntil('\n'); ln.trim();
-    if (!ln.length()) continue;
-    int c1=ln.indexOf(','), c2=ln.indexOf(',',c1+1);
-    if (c1<0||c2<0) continue;
-    int c3=ln.indexOf(',',c2+1);  // optional 4th column: uploaded (backward compatible)
-    NoteEntry e;
-    e.num = ln.substring(0,c1).toInt();
-    strncpy(e.tag, ln.substring(c1+1,c2).c_str(), 31);
-    e.tag[31]='\0';
-    if (c3<0) {
-      e.hasText  = (ln.substring(c2+1).toInt()==1);
-      e.uploaded = false;
-    } else {
-      e.hasText  = (ln.substring(c2+1,c3).toInt()==1);
-      e.uploaded = (ln.substring(c3+1).toInt()==1);
+  if (SD_MMC.exists(INDEX_FILE)) {
+    File f = SD_MMC.open(INDEX_FILE);
+    if (f) {
+      while (f.available()) {
+        String ln = f.readStringUntil('\n'); ln.trim();
+        if (!ln.length()) continue;
+        int c1=ln.indexOf(','), c2=ln.indexOf(',',c1+1);
+        if (c1<0||c2<0) continue;
+        int c3=ln.indexOf(',',c2+1);  // optional 4th column: uploaded (backward compatible)
+        NoteEntry e;
+        e.num = ln.substring(0,c1).toInt();
+        strncpy(e.tag, ln.substring(c1+1,c2).c_str(), 31);
+        e.tag[31]='\0';
+        if (c3<0) {
+          e.hasText  = (ln.substring(c2+1).toInt()==1);
+          e.uploaded = false;
+        } else {
+          e.hasText  = (ln.substring(c2+1,c3).toInt()==1);
+          e.uploaded = (ln.substring(c3+1).toInt()==1);
+        }
+        noteIndex.push_back(e);
+      }
+      f.close();
     }
-    noteIndex.push_back(e);
   }
-  f.close();
+
+  // Auto-scan SD card /notes directory for any notes missing in index
+  File dir = SD_MMC.open(NOTES_DIR);
+  if (dir && dir.isDirectory()) {
+    bool indexChanged = false;
+    File file = dir.openNextFile();
+    while (file) {
+      String name = file.name();
+      if (name.startsWith("/")) name = name.substring(name.lastIndexOf('/') + 1);
+      if (name.startsWith("note_") && (name.endsWith(".wav") || name.endsWith(".txt") || name.endsWith(".meta"))) {
+        int num = name.substring(5, 8).toInt();
+        if (num > 0) {
+          bool found = false;
+          for (size_t i = 0; i < noteIndex.size(); i++) {
+            if (noteIndex[i].num == num) { found = true; break; }
+          }
+          if (!found) {
+            String tag = readNoteMetaValue(num, "tag");
+            if (tag.length() == 0) tag = "Note";
+            String upStr = readNoteMetaValue(num, "uploaded");
+            bool uploaded = (upStr == "1");
+
+            char txtPath[64];
+            snprintf(txtPath, sizeof(txtPath), "%s/note_%03d.txt", NOTES_DIR, num);
+            char mdPath[64];
+            snprintf(mdPath, sizeof(mdPath), "%s/note_%03d.md", NOTES_DIR, num);
+            bool hasText = SD_MMC.exists(txtPath) || SD_MMC.exists(mdPath);
+
+            NoteEntry e;
+            e.num = num;
+            strncpy(e.tag, tag.c_str(), 31);
+            e.tag[31] = '\0';
+            e.hasText = hasText;
+            e.uploaded = uploaded;
+            noteIndex.push_back(e);
+            indexChanged = true;
+          }
+        }
+      }
+      file = dir.openNextFile();
+    }
+    dir.close();
+    if (indexChanged) {
+      saveIndex();
+    }
+  }
 }
 
 void saveIndex() {
@@ -82,7 +131,20 @@ void markUploaded(int num) {
     }
   }
   saveIndex();
-  writeNoteMeta(num, foundTag);
+
+  String path = noteMetaPath(num);
+  String existingCreated = readNoteMetaValue(num, "created_utc");
+  String created = existingCreated.length() ? existingCreated : currentUtcIso();
+  String syncUtc = currentUtcIso();
+  File f = SD_MMC.open(path.c_str(), FILE_WRITE);
+  if (f) {
+    f.print("created_utc="); f.println(created);
+    f.print("synced_utc="); f.println(syncUtc);
+    f.print("tag="); f.println(foundTag);
+    f.print("synced=1\n");
+    f.print("uploaded=1\n");
+    f.close();
+  }
 }
 
 int pendingSyncCount() {
@@ -158,13 +220,39 @@ int syncedNotesCount() {
 
 int nextNoteNumber() {
   int maxNum = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) if (noteIndex[i].num > maxNum) maxNum = noteIndex[i].num;
+  for (int i=0; i<(int)noteIndex.size(); i++) {
+    if (noteIndex[i].num > maxNum) maxNum = noteIndex[i].num;
+  }
+
+  File dir = SD_MMC.open(NOTES_DIR);
+  if (dir && dir.isDirectory()) {
+    File file = dir.openNextFile();
+    while (file) {
+      String name = file.name();
+      if (name.startsWith("/")) name = name.substring(name.lastIndexOf('/') + 1);
+      if (name.startsWith("note_")) {
+        int num = name.substring(5, 8).toInt();
+        if (num > maxNum) maxNum = num;
+      }
+      file = dir.openNextFile();
+    }
+    dir.close();
+  }
   return maxNum + 1;
 }
 
 void saveTag(int num, const char* tag) {
-  writeNoteMeta(num, tag);
-  addToIndex(num, tag, false);
+  const char* actualTag = (tag && strlen(tag) > 0) ? tag : "Note";
+  writeNoteMeta(num, actualTag);
+  for (size_t i = 0; i < noteIndex.size(); i++) {
+    if (noteIndex[i].num == num) {
+      strncpy(noteIndex[i].tag, actualTag, 31);
+      noteIndex[i].tag[31] = '\0';
+      saveIndex();
+      return;
+    }
+  }
+  addToIndex(num, actualTag, false);
 }
 
 // ─── Tags ─────────────────────────────────────────────────────────────────
@@ -312,10 +400,14 @@ String readNoteMetaValue(int num, const char* key) {
 void writeNoteMeta(int num, const char* tag) {
   String path = noteMetaPath(num);
   String existingCreated = readNoteMetaValue(num, "created_utc");
+  String existingSynced  = readNoteMetaValue(num, "synced_utc");
   String created = existingCreated.length() ? existingCreated : currentUtcIso();
   File f = SD_MMC.open(path.c_str(), FILE_WRITE);
   if (!f) return;
   f.print("created_utc="); f.println(created);
+  if (existingSynced.length() > 0) {
+    f.print("synced_utc="); f.println(existingSynced);
+  }
   f.print("tag="); f.println(tag ? tag : "");
   f.print("synced=");
   bool hasText = false, uploaded = false;
@@ -326,10 +418,14 @@ void writeNoteMeta(int num, const char* tag) {
   f.close();
 }
 
-// ─── Time helpers ─────────────────────────────────────────────────────────
+// ─── Time & sync helpers ──────────────────────────────────────────────────
 
 String noteCreatedUtc(int num) {
   return readNoteMetaValue(num, "created_utc");
+}
+
+String noteSyncedUtc(int num) {
+  return readNoteMetaValue(num, "synced_utc");
 }
 
 String utcToLocalDeviceLabel(const String& utcIso) {
@@ -355,6 +451,44 @@ String noteCreatedDeviceLabel(int num) {
   String utc = noteCreatedUtc(num);
   if (utc.length() < 16) return "time not set";
   return utcToLocalDeviceLabel(utc);
+}
+
+String noteSyncedDeviceLabel(int num) {
+  String utc = noteSyncedUtc(num);
+  if (utc.length() < 16) return "not synced";
+  return utcToLocalDeviceLabel(utc);
+}
+
+bool isNoteUploaded(int num) {
+  for (size_t i = 0; i < noteIndex.size(); i++) {
+    if (noteIndex[i].num == num) return noteIndex[i].uploaded;
+  }
+  return false;
+}
+
+String noteTextContent(int num) {
+  char path[64];
+  // Check .md first, then .txt
+  snprintf(path, sizeof(path), "%s/note_%03d.md", NOTES_DIR, num);
+  if (!SD_MMC.exists(path)) {
+    snprintf(path, sizeof(path), "%s/note_%03d.txt", NOTES_DIR, num);
+  }
+  if (!SD_MMC.exists(path)) return "";
+
+  File f = SD_MMC.open(path);
+  if (!f) return "";
+  String content = "";
+  size_t sz = f.size();
+  if (sz > 8192) sz = 8192; // Read up to 8KB
+  char* buf = (char*)malloc(sz + 1);
+  if (buf) {
+    size_t r = f.read((uint8_t*)buf, sz);
+    buf[r] = '\0';
+    content = String(buf);
+    free(buf);
+  }
+  f.close();
+  return content;
 }
 
 String currentUtcIso() {
