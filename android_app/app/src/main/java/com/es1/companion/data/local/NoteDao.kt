@@ -20,6 +20,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
     fun getNoteById(id: String): Flow<NoteEntity?>
 
+    @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
+    suspend fun getNoteByIdDirect(id: String): NoteEntity?
+
     @Query("SELECT * FROM notes WHERE deviceNoteNum = :noteNum AND deviceId = :deviceId LIMIT 1")
     suspend fun getNoteByDeviceNum(noteNum: Int, deviceId: String): NoteEntity?
 

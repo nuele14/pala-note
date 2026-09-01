@@ -60,6 +60,7 @@ fun MainNavigation(
     val selectedNote by viewModel.selectedNote.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
+    val modelDownloadState by viewModel.modelDownloadState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -171,7 +172,9 @@ fun MainNavigation(
                     onThemeModeChange = { viewModel.setThemeMode(it) },
                     tagRules = tagRules,
                     onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
-                    onCleanDeviceMemory = { viewModel.cleanDeviceMemory() }
+                    onCleanDeviceMemory = { viewModel.cleanDeviceMemory() },
+                    modelDownloadState = modelDownloadState,
+                    onDownloadModel = { viewModel.downloadWhisperModel() }
                 )
             }
         }

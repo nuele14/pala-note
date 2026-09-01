@@ -48,6 +48,9 @@ retrofit-gson = { group = "com.squareup.retrofit2", name = "converter-gson", ver
 # Coil
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
+# On-Device Offline STT
+sherpa-onnx = { group = "com.k2fsa.sherpa.onnx", name = "sherpa-onnx", version = "1.10.37" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

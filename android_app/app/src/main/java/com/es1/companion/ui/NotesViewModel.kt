@@ -129,13 +129,29 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         _showSyncDialog.value = false
     }
 
+    // Whisper Model State
+    val modelDownloadState = sttEngine.modelManager.downloadState
+
+    fun downloadWhisperModel() {
+        viewModelScope.launch {
+            val ok = sttEngine.modelManager.downloadModel()
+            withContext(Dispatchers.Main) {
+                if (ok) {
+                    Toast.makeText(getApplication(), "Modello Whisper On-Device pronto!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Errore nel download del modello", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     fun startSync() {
         viewModelScope.launch {
             val syncResult = syncManager.performSync()
-            if (syncResult.success && syncResult.downloadedCount > 0) {
-                // Pipeline automatica: STT -> LLM -> Export
+            if (syncResult.success) {
+                // Pipeline automatica on-device: STT -> LLM su tutte le note in sospeso
                 withContext(Dispatchers.IO) {
-                    Log.d(TAG, "Running post-sync pipeline...")
+                    Log.d(TAG, "Running on-device post-sync pipeline...")
                     sttEngine.processAllPending()
                     llmEngine.processAllPending()
                 }
@@ -158,10 +174,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     fun reElaborateNote(note: NoteEntity) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
+                sttEngine.transcribeNote(note.id)
                 llmEngine.elaborateNote(note.id)
             }
             // Update selected note
-            _selectedNote.value = noteDao.getNoteByDeviceNum(note.deviceNoteNum, note.deviceId)
+            _selectedNote.value = noteDao.getNoteByIdDirect(note.id) ?: noteDao.getNoteByDeviceNum(note.deviceNoteNum, note.deviceId)
             withContext(Dispatchers.Main) {
                 Toast.makeText(getApplication(), "Nota rielaborata con successo!", Toast.LENGTH_SHORT).show()
             }

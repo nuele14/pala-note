@@ -51,7 +51,10 @@ import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material3.Surface
-import com.es1.companion.ui.theme.ThemeMode
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material3.LinearProgressIndicator
+import com.es1.companion.domain.stt.ModelDownloadState
 
 @Composable
 fun SettingsScreen(
@@ -60,6 +63,8 @@ fun SettingsScreen(
     tagRules: List<TagRuleEntity>,
     onSaveTagRule: (String, String) -> Unit,
     onCleanDeviceMemory: () -> Unit,
+    modelDownloadState: ModelDownloadState,
+    onDownloadModel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val expandedMap = remember { mutableStateMapOf<String, Boolean>() }
@@ -202,26 +207,101 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Motore Whisper (STT On-Device)",
+                    text = "🎙️ Motore Whisper On-Device (Sherpa-ONNX)",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                    fontSize = 14.sp
                 )
                 Text(
-                    text = "faster-whisper (Int8) • Modello: base (140 MB)",
+                    text = "OpenAI Whisper Tiny Int8 (Multilingua, ~39 MB) • Eseguito 100% in locale sul dispositivo senza connessione Internet.",
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
+
+                when (modelDownloadState) {
+                    is ModelDownloadState.Ready -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Modello pronto per la trascrizione offline",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF4CAF50)
+                            )
+                        }
+                    }
+                    is ModelDownloadState.Downloading -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Download modello in corso (${modelDownloadState.currentFile})...",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "${modelDownloadState.progressPct}%",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { modelDownloadState.progressPct / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    is ModelDownloadState.NotDownloaded -> {
+                        Button(
+                            onClick = onDownloadModel,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(imageVector = Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Scarica Modello Whisper (39 MB)", fontSize = 12.sp)
+                        }
+                    }
+                    is ModelDownloadState.Error -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = modelDownloadState.message,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Button(
+                                onClick = onDownloadModel,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Riprova Download Modello", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                 Text(
-                    text = "Motore LLM (Revisione Intelligente)",
+                    text = "🤖 Motore LLM & Revisione Locale",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                    fontSize = 14.sp
                 )
                 Text(
-                    text = "Ollama (qwen2.5:1.5b) o Fallback Euristico Locale",
+                    text = "Riconoscimento vocale dei trigger dei Tag (Todo, Idea, Meeting, Buy, Work, Private) e formattazione istantanea in Markdown strutturato.",
                     fontSize = 12.sp,
                     color = Color.Gray
                 )

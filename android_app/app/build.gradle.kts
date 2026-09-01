@@ -85,5 +85,8 @@ dependencies {
     // Coil Image Loading
     implementation(libs.coil.compose)
 
+    // On-Device Whisper STT (Sherpa-ONNX)
+    implementation(libs.sherpa.onnx)
+
     debugImplementation(libs.androidx.ui.tooling)
 }
