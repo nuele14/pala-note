@@ -332,6 +332,10 @@ String noteCreatedUtc(int num) {
   return readNoteMetaValue(num, "created_utc");
 }
 
+String noteSyncedUtc(int num) {
+  return readNoteMetaValue(num, "synced_utc");
+}
+
 String utcToLocalDeviceLabel(const String& utcIso) {
   if (utcIso.length() < 16) return "time not set";
   struct tm utc;
@@ -354,6 +358,12 @@ String utcToLocalDeviceLabel(const String& utcIso) {
 String noteCreatedDeviceLabel(int num) {
   String utc = noteCreatedUtc(num);
   if (utc.length() < 16) return "time not set";
+  return utcToLocalDeviceLabel(utc);
+}
+
+String noteSyncedDeviceLabel(int num) {
+  String utc = noteSyncedUtc(num);
+  if (utc.length() < 16) return "pending sync";
   return utcToLocalDeviceLabel(utc);
 }
 

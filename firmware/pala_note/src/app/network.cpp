@@ -66,9 +66,12 @@ void handleApiInfo() {
   String json = "{";
   json += "\"device_id\":\"" + jsonEscape(getDeviceId()) + "\",";
   json += "\"firmware_version\":\"" FIRMWARE_VERSION "\",";
+  json += "\"battery_pct\":" + String(batPct) + ",";
   json += "\"battery_percent\":" + String(batPct) + ",";
+  json += "\"notes_count\":" + String(total) + ",";
   json += "\"total_notes\":" + String(total) + ",";
-  json += "\"pending_notes\":" + String(pending);
+  json += "\"pending_notes\":" + String(pending) + ",";
+  json += "\"softap_ssid\":\"" + jsonEscape(getSoftApSsid()) + "\"";
   json += "}";
 
   transferServer.sendHeader("Access-Control-Allow-Origin", "*");
@@ -77,11 +80,17 @@ void handleApiInfo() {
 
 void handleApiNotes() {
   loadIndex();
-  String json = "[";
+  int total = (int)noteIndex.size();
+
+  String json = "{";
+  json += "\"device_id\":\"" + jsonEscape(getDeviceId()) + "\",";
+  json += "\"count\":" + String(total) + ",";
+  json += "\"notes\":[";
   for (size_t i = 0; i < noteIndex.size(); i++) {
     if (i > 0) json += ",";
     int num = noteIndex[i].num;
     String createdUtc = noteCreatedUtc(num);
+    String syncedUtc  = noteSyncedUtc(num);
     size_t sz = noteAudioFileSize(num);
     float dur = noteAudioDurationSec(num);
 
@@ -90,12 +99,18 @@ void handleApiNotes() {
     json += "\"tag\":\"" + jsonEscape(String(noteIndex[i].tag)) + "\",";
     if (createdUtc.length()) json += "\"created_utc\":\"" + jsonEscape(createdUtc) + "\",";
     else                     json += "\"created_utc\":null,";
+    if (syncedUtc.length())  json += "\"synced_utc\":\"" + jsonEscape(syncedUtc) + "\",";
+    else                     json += "\"synced_utc\":null,";
     json += "\"duration_sec\":" + String(dur, 2) + ",";
+    json += "\"audio_bytes\":" + String((unsigned long)sz) + ",";
     json += "\"file_size\":" + String((unsigned long)sz) + ",";
-    json += "\"synced\":" + String(noteIndex[i].uploaded ? "true" : "false");
+    json += "\"has_text\":" + String(noteIndex[i].hasText ? "true" : "false") + ",";
+    json += "\"uploaded\":" + String(noteIndex[i].uploaded ? "true" : "false") + ",";
+    json += "\"synced\":" + String(noteIndex[i].uploaded ? "true" : "false") + ",";
+    json += "\"audio_url\":\"/api/notes/audio?num=" + String(num) + "\"";
     json += "}";
   }
-  json += "]";
+  json += "]}";
 
   transferServer.sendHeader("Access-Control-Allow-Origin", "*");
   transferServer.send(200, "application/json", json);

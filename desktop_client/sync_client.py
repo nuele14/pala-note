@@ -50,7 +50,12 @@ class SyncClient:
         try:
             resp = requests.get(f"{self.base_url}/api/notes", timeout=timeout)
             if resp.status_code == 200:
-                return resp.json()
+                data = resp.json()
+                if isinstance(data, dict):
+                    return data.get("notes", [])
+                elif isinstance(data, list):
+                    return data
+                return []
             logger.error(f"Errore fetch_device_notes: status {resp.status_code}")
             return []
         except requests.RequestException as e:
