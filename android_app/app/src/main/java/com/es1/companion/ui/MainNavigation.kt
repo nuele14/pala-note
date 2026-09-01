@@ -54,6 +54,8 @@ fun MainNavigation(
     val notes by viewModel.notes.collectAsState()
     val articles by viewModel.articles.collectAsState()
     val feeds by viewModel.feeds.collectAsState()
+    val queuedArticles by viewModel.queuedArticles.collectAsState()
+    val deviceSyncs by viewModel.deviceSyncs.collectAsState()
     val isRefreshingFeeds by viewModel.isRefreshingFeeds.collectAsState()
 
     val selectedTag by viewModel.selectedTag.collectAsState()
@@ -182,11 +184,14 @@ fun MainNavigation(
                 1 -> ArticlesScreen(
                     articles = articles,
                     feeds = feeds,
+                    queuedArticles = queuedArticles,
+                    deviceSyncs = deviceSyncs,
                     isRefreshing = isRefreshingFeeds,
                     onRefreshFeeds = { viewModel.refreshRssFeeds() },
-                    onPushArticle = { viewModel.pushArticleToDevice(it) },
-                    onPushAllArticles = { viewModel.pushAllArticlesToDevice() },
-                    onPushSelectedArticles = { viewModel.pushSelectedArticlesToDevice(it) },
+                    onQueueArticles = { ids, replace -> viewModel.queueArticlesForSync(ids, replace) },
+                    onRemoveFromQueue = { viewModel.removeArticleFromQueue(it) },
+                    onClearQueue = { viewModel.clearSyncQueue() },
+                    onToggleArticleQueue = { viewModel.toggleArticleQueue(it) },
                     onAddFeed = { title, url, category -> viewModel.addRssFeed(title, url, category) },
                     onEditFeed = { feed, title, url, category -> viewModel.updateRssFeed(feed, title, url, category) },
                     onDeleteFeed = { viewModel.deleteRssFeed(it) },

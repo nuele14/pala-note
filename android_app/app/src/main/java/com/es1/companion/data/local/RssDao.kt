@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -40,8 +41,11 @@ interface RssDao {
     @Query("SELECT * FROM articles WHERE feedId = :feedId ORDER BY datetime(createdUtc) DESC")
     fun getArticlesByFeed(feedId: String): Flow<List<ArticleEntity>>
 
-    @Query("SELECT * FROM articles WHERE isPushedToDevice = 0 ORDER BY datetime(createdUtc) DESC")
-    suspend fun getPendingPushArticles(): List<ArticleEntity>
+    @Query("SELECT * FROM articles WHERE queuedForSync = 1 ORDER BY datetime(createdUtc) DESC")
+    fun getQueuedArticlesFlow(): Flow<List<ArticleEntity>>
+
+    @Query("SELECT * FROM articles WHERE queuedForSync = 1")
+    suspend fun getQueuedArticlesList(): List<ArticleEntity>
 
     @Query("SELECT * FROM articles WHERE id = :id LIMIT 1")
     suspend fun getArticleById(id: String): ArticleEntity?
@@ -55,8 +59,15 @@ interface RssDao {
     @Update
     suspend fun updateArticle(article: ArticleEntity)
 
-    @Query("UPDATE articles SET isPushedToDevice = 1, pushedAtUtc = :utc WHERE id = :id")
-    suspend fun markArticlePushed(id: String, utc: String)
+    // Coda di sincronizzazione
+    @Query("UPDATE articles SET queuedForSync = 1, targetDeviceId = :targetDeviceId WHERE id IN (:ids)")
+    suspend fun queueArticlesForSync(ids: List<String>, targetDeviceId: String = "ALL")
+
+    @Query("UPDATE articles SET queuedForSync = 0 WHERE id = :id")
+    suspend fun removeFromSyncQueue(id: String)
+
+    @Query("UPDATE articles SET queuedForSync = 0")
+    suspend fun clearSyncQueue()
 
     @Query("UPDATE articles SET isRead = :isRead WHERE id = :id")
     suspend fun markArticleRead(id: String, isRead: Boolean)
@@ -64,6 +75,34 @@ interface RssDao {
     @Delete
     suspend fun deleteArticle(article: ArticleEntity)
 
-    @Query("DELETE FROM articles WHERE isRead = 1 AND isPushedToDevice = 1")
-    suspend fun clearArchivedArticles()
+    // ── Multi-Device Tracking ─────────────────────────────────────────────
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDeviceSync(sync: ArticleDeviceSyncEntity)
+
+    @Query("SELECT * FROM article_device_sync")
+    fun getAllDeviceSyncsFlow(): Flow<List<ArticleDeviceSyncEntity>>
+
+    @Query("SELECT * FROM article_device_sync WHERE articleId = :articleId")
+    suspend fun getDeviceSyncsForArticle(articleId: String): List<ArticleDeviceSyncEntity>
+
+    @Query("SELECT DISTINCT articleId FROM article_device_sync WHERE deviceId = :deviceId")
+    suspend fun getSyncedArticleIdsForDevice(deviceId: String): List<String>
+
+    @Transaction
+    suspend fun markArticleSyncedAndDequeue(
+        articleId: String,
+        deviceId: String,
+        deviceName: String,
+        syncedUtc: String
+    ) {
+        insertDeviceSync(
+            ArticleDeviceSyncEntity(
+                articleId = articleId,
+                deviceId = deviceId,
+                deviceName = deviceName,
+                syncedAtUtc = syncedUtc
+            )
+        )
+        removeFromSyncQueue(articleId)
+    }
 }

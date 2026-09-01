@@ -58,28 +58,20 @@ class RssManagerTest {
         
         // Simulating the clean conversion
         var text = html
-        text = text.replace(Regex("(?i)<br\s*/?>"), "
-")
-        text = text.replace(Regex("(?i)</p>"), "
-
-")
+        text = text.replace(Regex("(?i)<br\\s*/?>"), "\n")
+        text = text.replace(Regex("(?i)</p>"), "\n\n")
         text = text.replace(Regex("(?i)<p[^>]*>"), "")
-        text = text.replace(Regex("(?i)<h[1-3][^>]*>(.*?)</h[1-3]>"), "
-### $1
-")
-        text = text.replace(Regex("(?i)<li[^>]*>(.*?)</li>"), "* $1
-")
+        text = text.replace(Regex("(?i)<h[1-3][^>]*>(.*?)</h[1-3]>"), "\n### $1\n")
+        text = text.replace(Regex("(?i)<li[^>]*>(.*?)</li>"), "* $1\n")
         text = text.replace(Regex("(?i)<strong[^>]*>(.*?)</strong>"), "**$1**")
         text = text.replace(Regex("(?i)<b[^>]*>(.*?)</b>"), "**$1**")
         text = text.replace(Regex("(?i)<em[^>]*>(.*?)</em>"), "*$1*")
         text = text.replace(Regex("(?i)<i[^>]*>(.*?)</i>"), "*$1*")
-        text = text.replace(Regex("(?i)<blockquote[^>]*>(.*?)</blockquote>"), "
-> $1
-")
+        text = text.replace(Regex("(?i)<blockquote[^>]*>(.*?)</blockquote>"), "\n> $1\n")
         text = text.replace(Regex("<[^>]+>"), "")
         text = text.replace("&nbsp;", " ")
         text = text.replace("&amp;", "&")
-        text = text.replace("&quot;", """)
+        text = text.replace("&quot;", "\"")
         text = text.replace("&#39;", "'")
         val md = text.trim()
 
@@ -169,5 +161,23 @@ class RssManagerTest {
         assertEquals("Antirez Weblog", feedTitle)
         assertEquals(1, entries.size)
         assertEquals("The art of small hardware devices", entries[0])
+    }
+
+    @Test
+    fun testDeterministicArticleIdGeneration() {
+        val link1 = "https://news.ycombinator.com/item?id=12345"
+        val link2 = "https://news.ycombinator.com/item?id=12346"
+
+        val id1 = com.es1.companion.data.local.generateDeterministicArticleId(link1)
+        val id1Duplicate = com.es1.companion.data.local.generateDeterministicArticleId(link1)
+        val id2 = com.es1.companion.data.local.generateDeterministicArticleId(link2)
+
+        // Same URL must always produce identical UUID
+        assertEquals(id1, id1Duplicate)
+        // Different URLs must produce distinct UUIDs
+        assertFalse(id1 == id2)
+        // Valid UUID format (36 characters with hyphens)
+        assertEquals(36, id1.length)
+        assertTrue(id1.contains("-"))
     }
 }

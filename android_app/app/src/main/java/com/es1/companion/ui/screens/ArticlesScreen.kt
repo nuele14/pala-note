@@ -28,23 +28,32 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.DeviceUnknown
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.HourglassTop
+import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.PlaylistAddCheck
 import androidx.compose.material.icons.rounded.RssFeed
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -52,6 +61,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +91,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.es1.companion.data.local.ArticleDeviceSyncEntity
 import com.es1.companion.data.local.ArticleEntity
 import com.es1.companion.data.local.RssFeedEntity
 import com.es1.companion.domain.rss.FeedValidationResult
@@ -103,8 +114,9 @@ enum class ArticleDateFilter(val label: String) {
 
 enum class ArticleStatusFilter(val label: String) {
     ALL("Tutti"),
-    PENDING_PUSH("Non inviati"),
-    PUSHED("Già su ED1")
+    QUEUED("In coda ED1"),
+    SYNCED("Sincronizzati"),
+    NOT_SYNCED("Da preparare")
 }
 
 fun parseArticleTimestamp(article: ArticleEntity): Long {
@@ -143,11 +155,14 @@ fun parseArticleTimestamp(article: ArticleEntity): Long {
 fun ArticlesScreen(
     articles: List<ArticleEntity>,
     feeds: List<RssFeedEntity>,
+    queuedArticles: List<ArticleEntity>,
+    deviceSyncs: List<ArticleDeviceSyncEntity>,
     isRefreshing: Boolean,
     onRefreshFeeds: () -> Unit,
-    onPushArticle: (ArticleEntity) -> Unit,
-    onPushAllArticles: () -> Unit,
-    onPushSelectedArticles: (List<ArticleEntity>) -> Unit,
+    onQueueArticles: (List<String>, Boolean) -> Unit,
+    onRemoveFromQueue: (String) -> Unit,
+    onClearQueue: () -> Unit,
+    onToggleArticleQueue: (ArticleEntity) -> Unit,
     onAddFeed: (String, String, String) -> Unit,
     onEditFeed: (RssFeedEntity, String, String, String) -> Unit,
     onDeleteFeed: (RssFeedEntity) -> Unit,
@@ -159,6 +174,8 @@ fun ArticlesScreen(
     var showFeedsDialog by remember { mutableStateOf(false) }
     var editingFeed by remember { mutableStateOf<RssFeedEntity?>(null) }
     var showAddFeedDialog by remember { mutableStateOf(false) }
+    var showQueuedSheet by remember { mutableStateOf(false) }
+    var showConflictDialog by remember { mutableStateOf(false) }
 
     // Search, Filter & Sort states
     var searchQuery by remember { mutableStateOf("") }
@@ -170,13 +187,18 @@ fun ArticlesScreen(
     // Checkbox selections for batch actions
     val selectedArticleIds = remember { mutableStateListOf<String>() }
 
+    // Map of articleId -> list of synced devices
+    val syncedDevicesMap = remember(deviceSyncs) {
+        deviceSyncs.groupBy { it.articleId }
+    }
+
     // Filter & sort logic
     val now = System.currentTimeMillis()
     val oneDayMs = 24 * 60 * 60 * 1000L
     val sevenDaysMs = 7 * oneDayMs
     val thirtyDaysMs = 30 * oneDayMs
 
-    val filteredArticles = remember(articles, searchQuery, selectedFeedId, dateFilter, statusFilter, sortOrder) {
+    val filteredArticles = remember(articles, searchQuery, selectedFeedId, dateFilter, statusFilter, sortOrder, syncedDevicesMap) {
         articles
             .filter { art ->
                 // Search query filter
@@ -201,11 +223,13 @@ fun ArticlesScreen(
                 }
             }
             .filter { art ->
-                // Push status filter
+                // Status filter
+                val isSynced = (syncedDevicesMap[art.id]?.isNotEmpty() == true)
                 when (statusFilter) {
                     ArticleStatusFilter.ALL -> true
-                    ArticleStatusFilter.PENDING_PUSH -> !art.isPushedToDevice
-                    ArticleStatusFilter.PUSHED -> art.isPushedToDevice
+                    ArticleStatusFilter.QUEUED -> art.queuedForSync
+                    ArticleStatusFilter.SYNCED -> isSynced
+                    ArticleStatusFilter.NOT_SYNCED -> !art.queuedForSync && !isSynced
                 }
             }
             .sortedWith { a, b ->
@@ -218,8 +242,6 @@ fun ArticlesScreen(
                 }
             }
     }
-
-    val pendingPushCount = articles.count { !it.isPushedToDevice }
 
     Column(
         modifier = modifier
@@ -239,13 +261,35 @@ fun ArticlesScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "${filteredArticles.size} di ${articles.size} articoli • $pendingPushCount pronti per ED1",
+                    text = "${filteredArticles.size} di ${articles.size} articoli • ${queuedArticles.size} in coda per ED1",
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Button Coda ED1 with Badge
+                IconButton(onClick = { showQueuedSheet = true }) {
+                    BadgedBox(
+                        badge = {
+                            if (queuedArticles.isNotEmpty()) {
+                                Badge(containerColor = Color(0xFFFF9800), contentColor = Color.White) {
+                                    Text("${queuedArticles.size}")
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Inbox,
+                            contentDescription = "Coda ED1",
+                            tint = if (queuedArticles.isNotEmpty()) Color(0xFFFF9800) else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
                 IconButton(onClick = { showFeedsDialog = true }) {
                     Icon(
                         imageVector = Icons.Rounded.RssFeed,
@@ -317,7 +361,7 @@ fun ArticlesScreen(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Row 2: Date Sorting & Date Range Filter Bar (Visible & Interactive)
+        // Row 2: Date Sorting, Date Range & Status Filter Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -325,7 +369,7 @@ fun ArticlesScreen(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Prominent Sort Order Toggle Button
+            // Sort Order Toggle Button
             FilterChip(
                 selected = true,
                 onClick = {
@@ -357,7 +401,7 @@ fun ArticlesScreen(
 
             Box(modifier = Modifier.width(1.dp).height(18.dp).background(Color.LightGray))
 
-            // Date Range Filter Chips
+            // Date Range Filters
             ArticleDateFilter.values().forEach { dFilter ->
                 FilterChip(
                     selected = (dateFilter == dFilter),
@@ -371,25 +415,17 @@ fun ArticlesScreen(
 
             Box(modifier = Modifier.width(1.dp).height(18.dp).background(Color.LightGray))
 
-            // Push status chips
-            FilterChip(
-                selected = (statusFilter == ArticleStatusFilter.ALL),
-                onClick = { statusFilter = ArticleStatusFilter.ALL },
-                label = { Text("Tutti", fontSize = 11.sp) }
-            )
-            FilterChip(
-                selected = (statusFilter == ArticleStatusFilter.PENDING_PUSH),
-                onClick = { statusFilter = ArticleStatusFilter.PENDING_PUSH },
-                label = { Text("Non inviati", fontSize = 11.sp) }
-            )
-            FilterChip(
-                selected = (statusFilter == ArticleStatusFilter.PUSHED),
-                onClick = { statusFilter = ArticleStatusFilter.PUSHED },
-                label = { Text("Su ED1", fontSize = 11.sp) }
-            )
+            // Status Filters
+            ArticleStatusFilter.values().forEach { sFilter ->
+                FilterChip(
+                    selected = (statusFilter == sFilter),
+                    onClick = { statusFilter = sFilter },
+                    label = { Text(sFilter.label, fontSize = 11.sp) }
+                )
+            }
         }
 
-        // Selection & Batch Push Header
+        // Selection & Batch Preparation Action Header
         if (filteredArticles.isNotEmpty()) {
             Row(
                 modifier = Modifier
@@ -420,16 +456,20 @@ fun ArticlesScreen(
                 if (selectedArticleIds.isNotEmpty()) {
                     Button(
                         onClick = {
-                            val selectedList = articles.filter { it.id in selectedArticleIds }
-                            onPushSelectedArticles(selectedList)
+                            if (queuedArticles.isNotEmpty()) {
+                                showConflictDialog = true
+                            } else {
+                                onQueueArticles(selectedArticleIds.toList(), false)
+                                selectedArticleIds.clear()
+                            }
                         },
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Icon(imageVector = Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Icon(imageVector = Icons.Rounded.PlaylistAdd, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Invia (${selectedArticleIds.size}) a ED1", fontSize = 11.sp)
+                        Text("Prepara per ED1 (${selectedArticleIds.size})", fontSize = 11.sp)
                     }
                 }
             }
@@ -455,12 +495,12 @@ fun ArticlesScreen(
                         modifier = Modifier.size(54.dp)
                     )
                     Text(
-                        text = "Nessun articolo corrispondente ai filtri",
+                        text = "Nessun articolo corrispondente",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Prova a modificare i filtri per data o premi aggiorna per scaricare nuovi articoli.",
+                        text = "Prova a modificare i filtri o premi aggiorna per scaricare nuovi articoli.",
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
@@ -474,9 +514,12 @@ fun ArticlesScreen(
             ) {
                 items(filteredArticles, key = { it.id }) { article ->
                     val isChecked = article.id in selectedArticleIds
-                    ArticleCardWithCheckbox(
+                    val syncedList = syncedDevicesMap[article.id] ?: emptyList()
+
+                    ArticleCardAsync(
                         article = article,
                         isChecked = isChecked,
+                        syncedDevices = syncedList,
                         onCheckedChange = { checked ->
                             if (checked) {
                                 if (article.id !in selectedArticleIds) selectedArticleIds.add(article.id)
@@ -484,19 +527,71 @@ fun ArticlesScreen(
                                 selectedArticleIds.remove(article.id)
                             }
                         },
-                        onClick = { selectedArticle = article },
-                        onPush = { onPushArticle(article) }
+                        onClick = { selectedArticle = article }
                     )
                 }
             }
         }
     }
 
+    // Conflict Dialog when adding to an existing non-empty queue
+    if (showConflictDialog) {
+        AlertDialog(
+            onDismissRequest = { showConflictDialog = false },
+            title = { Text("Lista Sincronizzazione ED1") },
+            text = {
+                Text(
+                    text = "Ci sono già ${queuedArticles.size} articoli in attesa di sincronizzazione con ED1. Come desideri procedere per i ${selectedArticleIds.size} articoli selezionati?",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onQueueArticles(selectedArticleIds.toList(), false)
+                        selectedArticleIds.clear()
+                        showConflictDialog = false
+                    }
+                ) {
+                    Text("Aggiungi alla lista")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            onQueueArticles(selectedArticleIds.toList(), true)
+                            selectedArticleIds.clear()
+                            showConflictDialog = false
+                        }
+                    ) {
+                        Text("Sostituisci lista", color = Color(0xFFE65100))
+                    }
+                    TextButton(onClick = { showConflictDialog = false }) {
+                        Text("Annulla")
+                    }
+                }
+            }
+        )
+    }
+
+    // Queued Articles Management BottomSheet
+    if (showQueuedSheet) {
+        QueuedArticlesBottomSheet(
+            queuedArticles = queuedArticles,
+            onRemove = { onRemoveFromQueue(it.id) },
+            onClearAll = { onClearQueue() },
+            onDismiss = { showQueuedSheet = false }
+        )
+    }
+
     // Article Detail & Reader Sheet with HTML Web Preview
     selectedArticle?.let { article ->
+        val syncedList = syncedDevicesMap[article.id] ?: emptyList()
         ArticlePreviewBottomSheet(
             article = article,
-            onPush = { onPushArticle(article) },
+            syncedDevices = syncedList,
+            onToggleQueue = { onToggleArticleQueue(article) },
             onDismiss = { selectedArticle = null }
         )
     }
@@ -621,12 +716,12 @@ fun ArticlesScreen(
 }
 
 @Composable
-fun ArticleCardWithCheckbox(
+fun ArticleCardAsync(
     article: ArticleEntity,
     isChecked: Boolean,
+    syncedDevices: List<ArticleDeviceSyncEntity>,
     onCheckedChange: (Boolean) -> Unit,
-    onClick: () -> Unit,
-    onPush: () -> Unit
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -634,7 +729,7 @@ fun ArticleCardWithCheckbox(
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (article.queuedForSync) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f) else MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
         Row(
@@ -674,34 +769,58 @@ fun ArticleCardWithCheckbox(
                         )
                     }
 
-                    if (article.isPushedToDevice) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = "Inviato",
-                                tint = Color(0xFF4CAF50),
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "Su ED1",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF4CAF50)
-                            )
+                    // Sync & Queue Badges
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (article.queuedForSync) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFFFF3E0))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.HourglassTop,
+                                    contentDescription = null,
+                                    tint = Color(0xFFE65100),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "In coda ED1",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFE65100)
+                                )
+                            }
                         }
-                    } else {
-                        OutlinedButton(
-                            onClick = onPush,
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(26.dp)
-                        ) {
-                            Icon(imageVector = Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(11.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("Invia", fontSize = 10.sp)
+
+                        if (syncedDevices.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFE8F5E9))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2E7D32),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                val devLabel = syncedDevices.joinToString(", ") { it.deviceName ?: it.deviceId }
+                                Text(
+                                    text = "Su $devLabel",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32)
+                                )
+                            }
                         }
                     }
                 }
@@ -736,12 +855,135 @@ fun ArticleCardWithCheckbox(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QueuedArticlesBottomSheet(
+    queuedArticles: List<ArticleEntity>,
+    onRemove: (ArticleEntity) -> Unit,
+    onClearAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "📥 Lista di Lettura ED1",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${queuedArticles.size} articoli pronti per la sincronizzazione Wi-Fi",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+
+                if (queuedArticles.isNotEmpty()) {
+                    TextButton(onClick = onClearAll) {
+                        Icon(imageVector = Icons.Rounded.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Svuota", color = Color(0xFFEF5350))
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
+            if (queuedArticles.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(30.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Rounded.Inbox, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
+                        Text("Nessun articolo in coda per ED1", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Seleziona gli articoli con le checkbox e premi 'Prepara per ED1'.", fontSize = 11.sp, color = Color.Gray)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(350.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(queuedArticles, key = { it.id }) { article ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = article.feedTitle,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = article.title,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = { onRemove(article) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Rimuovi dalla coda",
+                                    tint = Color(0xFFEF5350),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = "ℹ️ Gli articoli in questa lista verranno trasferiti automaticamente all'ED1 non appena avvierai la sincronizzazione Wi-Fi.",
+                fontSize = 11.sp,
+                color = Color.Gray,
+                lineHeight = 15.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+        }
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArticlePreviewBottomSheet(
     article: ArticleEntity,
-    onPush: () -> Unit,
+    syncedDevices: List<ArticleDeviceSyncEntity>,
+    onToggleQueue: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -766,12 +1008,25 @@ fun ArticlePreviewBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = article.feedTitle,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = article.feedTitle,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (syncedDevices.isNotEmpty()) {
+                            Text(
+                                text = "✅ Su ${syncedDevices.joinToString { it.deviceName ?: it.deviceId }}",
+                                fontSize = 10.sp,
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                     Text(
                         text = article.title,
                         fontWeight = FontWeight.Bold,
@@ -873,15 +1128,28 @@ fun ArticlePreviewBottomSheet(
                 }
             }
 
-            // Bottom Push Action Button
-            Button(
-                onClick = onPush,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(imageVector = Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(if (article.isPushedToDevice) "Reinvia a ED1 (E-Paper)" else "Invia a ED1 (E-Paper)")
+            // Bottom Queue Toggle Action Button
+            if (article.queuedForSync) {
+                OutlinedButton(
+                    onClick = onToggleQueue,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE65100)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(imageVector = Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Rimuovi dalla Coda ED1", color = Color(0xFFE65100))
+                }
+            } else {
+                Button(
+                    onClick = onToggleQueue,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(imageVector = Icons.Rounded.PlaylistAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Aggiungi alla Coda di Sincronizzazione ED1")
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))

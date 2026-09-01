@@ -6,6 +6,7 @@ import android.util.Xml
 import com.es1.companion.data.local.ArticleEntity
 import com.es1.companion.data.local.RssDao
 import com.es1.companion.data.local.RssFeedEntity
+import com.es1.companion.data.local.generateDeterministicArticleId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -146,9 +147,15 @@ class RssManager(
     }
 
     /**
-     * Invia un articolo formattato in Markdown all'ED1 (ESP32) via HTTP REST.
+     * Invia un articolo formattato in Markdown all'ED1 (ESP32) via HTTP REST
+     * e registra l'avvenuta sincronizzazione nel DB multi-dispositivo rimuovendolo dalla coda.
      */
-    suspend fun pushArticleToDevice(article: ArticleEntity, deviceIp: String = "192.168.4.1"): Boolean = withContext(Dispatchers.IO) {
+    suspend fun pushArticleToDevice(
+        article: ArticleEntity,
+        deviceId: String = "ES1",
+        deviceName: String = "ES1 Note Reader",
+        deviceIp: String = "192.168.4.1"
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
             val url = "http://$deviceIp/api/articles/push"
             val markdownDocument = buildString {
@@ -177,27 +184,36 @@ class RssManager(
 
             val response = httpClient.newCall(request).execute()
             if (response.isSuccessful) {
-                Log.d(TAG, "Article '${article.title}' pushed to ED1 successfully.")
-                rssDao.markArticlePushed(article.id, getUtcIsoNow())
+                Log.d(TAG, "Article '${article.title}' pushed to $deviceId successfully.")
+                rssDao.markArticleSyncedAndDequeue(
+                    articleId = article.id,
+                    deviceId = deviceId,
+                    deviceName = deviceName,
+                    syncedUtc = getUtcIsoNow()
+                )
                 return@withContext true
             } else {
-                Log.w(TAG, "ED1 push returned HTTP ${response.code}")
+                Log.w(TAG, "Device $deviceId push returned HTTP ${response.code}")
                 return@withContext false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to push article to ED1 at $deviceIp: ${e.message}")
+            Log.e(TAG, "Failed to push article to device at $deviceIp: ${e.message}")
             return@withContext false
         }
     }
 
     /**
-     * Invia tutti gli articoli non ancora sincronizzati all'ED1.
+     * Invia tutti gli articoli in coda di sincronizzazione all'ED1.
      */
-    suspend fun pushAllPendingArticles(deviceIp: String = "192.168.4.1"): Int = withContext(Dispatchers.IO) {
-        val pending = rssDao.getPendingPushArticles()
+    suspend fun pushAllQueuedArticles(
+        deviceId: String = "ES1",
+        deviceName: String = "ES1 Note Reader",
+        deviceIp: String = "192.168.4.1"
+    ): Int = withContext(Dispatchers.IO) {
+        val queued = rssDao.getQueuedArticlesList()
         var pushedCount = 0
-        for (art in pending) {
-            val ok = pushArticleToDevice(art, deviceIp)
+        for (art in queued) {
+            val ok = pushArticleToDevice(art, deviceId, deviceName, deviceIp)
             if (ok) pushedCount++
         }
         return@withContext pushedCount
@@ -216,6 +232,7 @@ class RssManager(
 
         var title = ""
         var link = ""
+        var guid: String? = null
         var author: String? = null
         var pubDate: String? = null
         var description = ""
@@ -232,6 +249,7 @@ class RssManager(
                         insideItem = true
                         title = ""
                         link = ""
+                        guid = null
                         author = null
                         pubDate = null
                         description = ""
@@ -247,6 +265,7 @@ class RssManager(
                                 val href = parser.getAttributeValue(null, "href")
                                 link = if (!href.isNullOrBlank()) href.trim() else parser.nextText().trim()
                             }
+                            "guid", "id" -> guid = parser.nextText().trim()
                             "author", "dc:creator" -> author = parser.nextText().trim()
                             "pubdate", "published", "updated" -> pubDate = parser.nextText().trim()
                             "description", "summary" -> description = parser.nextText().trim()
@@ -260,18 +279,24 @@ class RssManager(
                             val rawText = if (contentEncoded.isNotBlank()) contentEncoded else description
                             val cleanMd = htmlToMarkdown(rawText)
 
+                            val canonicalKey = guid?.ifBlank { null } ?: link.ifBlank { "urn:article:${title.hashCode()}" }
+                            val deterministicId = generateDeterministicArticleId(canonicalKey)
+
                             items.add(
                                 ArticleEntity(
+                                    id = deterministicId,
                                     feedId = feed.id,
                                     feedTitle = if (feed.title.isNotBlank() && feed.title != "Test Feed") feed.title else channelTitle.ifBlank { feed.title },
                                     title = title,
                                     author = author,
-                                    link = if (link.isNotBlank()) link else "urn:article:${title.hashCode()}",
+                                    link = if (link.isNotBlank()) link else canonicalKey,
+                                    guid = guid,
                                     pubDate = pubDate,
                                     rawSummary = htmlToPlainText(description),
                                     markdownContent = cleanMd,
                                     isRead = false,
-                                    isPushedToDevice = false,
+                                    queuedForSync = false,
+                                    targetDeviceId = "ALL",
                                     createdUtc = nowUtc
                                 )
                             )

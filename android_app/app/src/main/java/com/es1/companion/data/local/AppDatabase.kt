@@ -10,8 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [NoteEntity::class, TagRuleEntity::class, RssFeedEntity::class, ArticleEntity::class],
-    version = 2,
+    entities = [NoteEntity::class, TagRuleEntity::class, RssFeedEntity::class, ArticleEntity::class, ArticleDeviceSyncEntity::class],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 import android.content.Context
+import com.es1.companion.data.local.ArticleDeviceSyncEntity
 import com.es1.companion.data.local.ArticleEntity
 import com.es1.companion.data.local.RssFeedEntity
 import com.es1.companion.domain.rss.RssManager
@@ -51,6 +52,12 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val feeds: StateFlow<List<RssFeedEntity>> = rssDao.getAllFeeds()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val queuedArticles: StateFlow<List<ArticleEntity>> = rssDao.getQueuedArticlesFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val deviceSyncs: StateFlow<List<ArticleDeviceSyncEntity>> = rssDao.getAllDeviceSyncsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isRefreshingFeeds = MutableStateFlow(false)
@@ -180,11 +187,20 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val syncResult = syncManager.performSync()
             if (syncResult.success) {
-                // Pipeline automatica on-device: STT -> LLM su tutte le note in sospeso
                 withContext(Dispatchers.IO) {
                     Log.d(TAG, "Running on-device post-sync pipeline...")
+                    // 1. Pipeline note vocali: STT -> LLM
                     sttEngine.processAllPending()
                     llmEngine.processAllPending()
+
+                    // 2. Trasferimento automatico articoli RSS in coda verso ED1
+                    val pushedCount = rssManager.pushAllQueuedArticles()
+                    if (pushedCount > 0) {
+                        Log.d(TAG, "Successfully transferred $pushedCount queued articles to ED1.")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(getApplication(), "$pushedCount articoli RSS trasferiti su ED1!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
         }
@@ -385,45 +401,49 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun pushAllArticlesToDevice() {
-        viewModelScope.launch {
-            withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Invio articoli a ED1 in corso...", Toast.LENGTH_SHORT).show()
+    fun queueArticlesForSync(articleIds: List<String>, replaceExisting: Boolean = false, targetDeviceId: String = "ALL") {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (articleIds.isEmpty()) return@launch
+            if (replaceExisting) {
+                rssDao.clearSyncQueue()
             }
-            val count = rssManager.pushAllPendingArticles()
+            rssDao.queueArticlesForSync(articleIds, targetDeviceId)
             withContext(Dispatchers.Main) {
-                if (count > 0) {
-                    Toast.makeText(getApplication(), "$count articoli inviati a ED1!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(getApplication(), "Nessun nuovo articolo o ED1 non raggiungibile", Toast.LENGTH_SHORT).show()
-                }
+                val mode = if (replaceExisting) "sostituiti" else "aggiunti"
+                Toast.makeText(getApplication(), "${articleIds.size} articoli $mode nella lista per ED1!", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    fun pushSelectedArticlesToDevice(articlesToPush: List<ArticleEntity>) {
-        viewModelScope.launch {
-            if (articlesToPush.isEmpty()) {
+    fun removeArticleFromQueue(articleId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            rssDao.removeFromSyncQueue(articleId)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Articolo rimosso dalla lista per ED1", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun clearSyncQueue() {
+        viewModelScope.launch(Dispatchers.IO) {
+            rssDao.clearSyncQueue()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Lista di sincronizzazione ED1 svuotata", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun toggleArticleQueue(article: ArticleEntity, targetDeviceId: String = "ALL") {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (article.queuedForSync) {
+                rssDao.removeFromSyncQueue(article.id)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Nessun articolo selezionato", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(getApplication(), "Articolo rimosso dalla lista ED1", Toast.LENGTH_SHORT).show()
                 }
-                return@launch
-            }
-            withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Invio di ${articlesToPush.size} articoli a ED1 in corso...", Toast.LENGTH_SHORT).show()
-            }
-            var okCount = 0
-            withContext(Dispatchers.IO) {
-                for (art in articlesToPush) {
-                    val ok = rssManager.pushArticleToDevice(art)
-                    if (ok) okCount++
-                }
-            }
-            withContext(Dispatchers.Main) {
-                if (okCount > 0) {
-                    Toast.makeText(getApplication(), "$okCount di ${articlesToPush.size} articoli inviati a ED1!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(getApplication(), "Errore nell'invio a ED1 (192.168.4.1)", Toast.LENGTH_LONG).show()
+            } else {
+                rssDao.queueArticlesForSync(listOf(article.id), targetDeviceId)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Articolo aggiunto alla lista ED1!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
