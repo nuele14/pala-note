@@ -50,11 +50,11 @@ class STTEngine(
                     modelType = "whisper"
                 )
             )
-            recognizer = OfflineRecognizer(context.assets, config)
+            recognizer = OfflineRecognizer(null, config)
             Log.d(TAG, "Sherpa-ONNX OfflineRecognizer initialized successfully.")
             return recognizer
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize Sherpa-ONNX recognizer", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to initialize Sherpa-ONNX recognizer: ${t.message}", t)
             return null
         }
     }
@@ -63,33 +63,28 @@ class STTEngine(
      * Trascrive la nota localmente sul dispositivo con Whisper ONNX.
      */
     suspend fun transcribeNote(noteId: String): String? = withContext(Dispatchers.IO) {
-        val note = noteDao.getNoteByIdDirect(noteId)
-            ?: noteDao.getPendingTranscriptions().find { it.id == noteId }
-            ?: return@withContext null
+        try {
+            val note = noteDao.getNoteByIdDirect(noteId)
+                ?: noteDao.getPendingTranscriptions().find { it.id == noteId }
+                ?: return@withContext null
 
-        val audioFile = File(note.audioLocalPath)
-        if (!audioFile.exists() || audioFile.length() == 0L) {
-            Log.w(TAG, "Audio file missing for note #${note.deviceNoteNum} at ${note.audioLocalPath}")
-            return@withContext null
-        }
-
-        // Se il modello non è ancora presente, avvia il download automatico
-        if (!modelManager.isModelReady()) {
-            Log.d(TAG, "Model not ready, starting automatic download...")
-            val downloaded = modelManager.downloadModel()
-            if (!downloaded) {
-                Log.e(TAG, "Cannot transcribe without on-device Whisper model.")
+            val audioFile = File(note.audioLocalPath)
+            if (!audioFile.exists() || audioFile.length() == 0L) {
+                Log.w(TAG, "Audio file missing for note #${note.deviceNoteNum} at ${note.audioLocalPath}")
                 return@withContext null
             }
-        }
 
-        val rec = getOrCreateRecognizer()
-        if (rec == null) {
-            Log.e(TAG, "OfflineRecognizer could not be created.")
-            return@withContext null
-        }
+            if (!modelManager.isModelReady()) {
+                Log.w(TAG, "Whisper model not ready on disk.")
+                return@withContext null
+            }
 
-        try {
+            val rec = getOrCreateRecognizer()
+            if (rec == null) {
+                Log.e(TAG, "OfflineRecognizer could not be created.")
+                return@withContext null
+            }
+
             Log.d(TAG, "Transcribing WAV audio on-device for note #${note.deviceNoteNum} (${audioFile.name})...")
             val stream = rec.createStream()
 
@@ -116,8 +111,8 @@ class STTEngine(
             )
             noteDao.updateNote(updated)
             return@withContext finalText
-        } catch (e: Exception) {
-            Log.e(TAG, "Transcription failed for note #${note.deviceNoteNum}", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Fatal error during on-device transcription for note $noteId", t)
             return@withContext null
         }
     }
@@ -140,18 +135,19 @@ class STTEngine(
             }
 
             val pcmBytes = bytes.size - dataOffset
-            if (pcmBytes <= 0) return FloatArray(0)
+            if (pcmBytes <= 1) return FloatArray(0)
 
             val sampleCount = pcmBytes / 2
+            val validPcmBytes = sampleCount * 2
             val samples = FloatArray(sampleCount)
-            val buffer = ByteBuffer.wrap(bytes, dataOffset, pcmBytes).order(ByteOrder.LITTLE_ENDIAN)
+            val buffer = ByteBuffer.wrap(bytes, dataOffset, validPcmBytes).order(ByteOrder.LITTLE_ENDIAN)
 
             for (i in 0 until sampleCount) {
                 samples[i] = buffer.short / 32768.0f
             }
             return samples
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse WAV file ${file.name}", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to parse WAV file ${file.name}", t)
             return FloatArray(0)
         }
     }
