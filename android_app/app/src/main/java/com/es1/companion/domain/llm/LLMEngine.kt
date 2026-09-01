@@ -26,33 +26,32 @@ class LLMEngine(
     private var ollamaModel: String = "qwen2.5:1.5b"
 
     suspend fun elaborateNote(noteId: String): NoteEntity? = withContext(Dispatchers.IO) {
-        val note = noteDao.getPendingElaborations().find { it.id == noteId }
+        val note = noteDao.getNoteByIdDirect(noteId)
+            ?: noteDao.getPendingElaborations().find { it.id == noteId }
             ?: return@withContext null
 
         val rawText = note.transcriptionText
-        if (rawText.isNullOrBlank()) {
-            Log.w(TAG, "Cannot elaborate note with empty transcription")
-            return@withContext null
+        val effectiveText = if (!rawText.isNullOrBlank()) {
+            rawText
+        } else {
+            "Nota #${note.deviceNoteNum} (${note.tag})"
         }
 
         // 1. Riconoscimento vocale automatico del Tag dalle prime parole pronunciate
-        val voiceResult = detectVoiceTrigger(rawText)
-        val assignedTag = voiceResult.tag
-        val cleanUserText = voiceResult.cleanBody
+        val voiceResult = detectVoiceTrigger(effectiveText)
+        val assignedTag = if (note.tag.isNotBlank() && note.tag != "Untagged" && note.tag != "Note") {
+            note.tag
+        } else {
+            voiceResult.tag
+        }
+        val cleanUserText = voiceResult.cleanBody.ifBlank { effectiveText }
 
         val tagRule = noteDao.getTagRule(assignedTag)
         val prompt = tagRule?.systemPrompt ?: "Rielabora e struttura questa nota vocale in modo chiaro."
 
-        Log.d(TAG, "Elaborating note #${note.deviceNoteNum} (Voice Trigger Tag: $assignedTag)...")
+        Log.d(TAG, "Elaborating note #${note.deviceNoteNum} (Tag: $assignedTag)...")
 
-        // 2. Prova con Ollama (se configurato) o fallback su motore euristico locale
-        var result = if (!ollamaHost.isNullOrBlank()) {
-            callOllama(ollamaHost!!, ollamaModel, prompt, cleanUserText)
-        } else null
-
-        if (result == null) {
-            result = applyHeuristicElaboration(assignedTag, cleanUserText)
-        }
+        var result = applyHeuristicElaboration(assignedTag, cleanUserText)
 
         val title = extractTitle(cleanUserText, result)
         val updatedNote = note.copy(

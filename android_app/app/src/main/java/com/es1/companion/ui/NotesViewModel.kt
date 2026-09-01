@@ -173,14 +173,41 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun reElaborateNote(note: NoteEntity) {
         viewModelScope.launch {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Avvio rielaborazione nota #${note.deviceNoteNum}...", Toast.LENGTH_SHORT).show()
+            }
+
+            val isModelReady = sttEngine.modelManager.isModelReady()
+            if (!isModelReady) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Modello Whisper non scaricato. Scaricalo dalla tab Impostazioni (connesso a Internet)!", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Trascrizione Whisper on-device in corso...", Toast.LENGTH_SHORT).show()
+                }
+                withContext(Dispatchers.IO) {
+                    sttEngine.transcribeNote(note.id)
+                }
+            }
+
+            // Elaborazione intelligente (LLM / Regole Tag)
             withContext(Dispatchers.IO) {
-                sttEngine.transcribeNote(note.id)
                 llmEngine.elaborateNote(note.id)
             }
-            // Update selected note
-            _selectedNote.value = noteDao.getNoteByIdDirect(note.id) ?: noteDao.getNoteByDeviceNum(note.deviceNoteNum, note.deviceId)
+
+            // Ricarica la nota aggiornata nel bottom sheet
+            val freshNote = withContext(Dispatchers.IO) {
+                noteDao.getNoteByIdDirect(note.id) ?: noteDao.getNoteByDeviceNum(note.deviceNoteNum, note.deviceId)
+            }
+            _selectedNote.value = freshNote
+
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Nota rielaborata con successo!", Toast.LENGTH_SHORT).show()
+                if (freshNote?.transcriptionText != null && freshNote.elaboratedMarkdown != null) {
+                    Toast.makeText(getApplication(), "Nota #${note.deviceNoteNum} rielaborata con successo!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Rielaborazione completata.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
