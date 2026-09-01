@@ -33,6 +33,8 @@ String utcToLocalDeviceLabel(const String& utcIso);
 String noteCreatedDeviceLabel(int num);
 String noteSyncedDeviceLabel(int num);
 String currentUtcIso();
+bool   isNoteUploaded(int num);
+String noteTextContent(int num);
 
 String notePreviewText(int num, size_t maxLen = 90);
 String noteTickerText(int idx);

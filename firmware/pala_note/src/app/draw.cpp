@@ -289,14 +289,14 @@ void drawCharLegacy(int x, int y, char c, int scale, uint8_t color) {
 
 const GFXfont* uiFontForScale(int scale) {
   if (scale <= 1) return &FreeSans9pt7b;
-  if (scale == 2) return &FreeSansBold12pt7b;
-  return &FreeSansBold18pt7b;
+  if (scale == 2) return &FreeSansBold9pt7b;
+  return &FreeSansBold12pt7b;
 }
 
 int uiFontHeight(int scale) {
-  if (scale <= 1) return 14;
-  if (scale == 2) return 22;
-  return 31;
+  if (scale <= 1) return 13;
+  if (scale == 2) return 15;
+  return 20;
 }
 
 void textBoundsFont(const char* s, int scale, int* minX, int* minY, int* maxX, int* maxY, int* advOut) {
