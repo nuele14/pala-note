@@ -29,6 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,6 +67,8 @@ fun SettingsScreen(
     onCleanDeviceMemory: () -> Unit,
     modelDownloadState: ModelDownloadState,
     onDownloadModel: () -> Unit,
+    gemmaDownloadState: ModelDownloadState,
+    onDownloadGemmaModel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val expandedMap = remember { mutableStateMapOf<String, Boolean>() }
@@ -297,15 +300,95 @@ fun SettingsScreen(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 Text(
-                    text = "🤖 Motore LLM & Revisione Locale",
+                    text = "🤖 Motore LLM & Sintesi On-Device (Gemma)",
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
                 Text(
-                    text = "Riconoscimento vocale dei trigger dei Tag (Todo, Idea, Meeting, Buy, Work, Private) e formattazione istantanea in Markdown strutturato.",
+                    text = "Google Gemma 2B-IT (MediaPipe GenAI On-Device) • Rielabora e struttura le note vocalmente con comprensione del contesto 100% offline.",
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
+
+                when (gemmaDownloadState) {
+                    is ModelDownloadState.Ready -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Modello Gemma 2B pronto per la sintesi neurale offline",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF4CAF50)
+                            )
+                        }
+                    }
+                    is ModelDownloadState.Downloading -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Download Gemma in corso (${gemmaDownloadState.currentFile})...",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "${gemmaDownloadState.progressPct}%",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { gemmaDownloadState.progressPct / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    is ModelDownloadState.NotDownloaded -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Fallback euristico locale attivo (zero-latency).",
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                            OutlinedButton(
+                                onClick = onDownloadGemmaModel,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(imageVector = Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Scarica Modello Gemma 2B (On-Device)", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    is ModelDownloadState.Error -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = gemmaDownloadState.message,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Button(
+                                onClick = onDownloadGemmaModel,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Riprova Download Gemma", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
             }
         }
 

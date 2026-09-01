@@ -27,6 +27,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 import android.content.Context
+import com.es1.companion.data.local.ArticleEntity
+import com.es1.companion.data.local.RssFeedEntity
+import com.es1.companion.domain.rss.RssManager
 import com.es1.companion.ui.theme.ThemeMode
 
 class NotesViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,12 +37,24 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "NotesViewModel"
     private val db = AppDatabase.getDatabase(application, viewModelScope)
     private val noteDao = db.noteDao()
+    private val rssDao = db.rssDao()
     private val syncManager = ES1SyncManager(application)
 
     // Domain engines
     private val sttEngine = STTEngine(application, noteDao)
     private val llmEngine = LLMEngine(application, noteDao)
     private val exporter = MarkdownExporter(application, noteDao)
+    val rssManager = RssManager(application, rssDao)
+
+    // RSS Feeds & Articles Flows
+    val articles: StateFlow<List<ArticleEntity>> = rssDao.getAllArticles()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val feeds: StateFlow<List<RssFeedEntity>> = rssDao.getAllFeeds()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _isRefreshingFeeds = MutableStateFlow(false)
+    val isRefreshingFeeds: StateFlow<Boolean> = _isRefreshingFeeds.asStateFlow()
 
     // Theme Mode with persistence
     private val prefs = application.getSharedPreferences("es1_settings", Context.MODE_PRIVATE)
@@ -139,7 +154,23 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 if (ok) {
                     Toast.makeText(getApplication(), "Modello Whisper On-Device pronto!", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(getApplication(), "Errore nel download del modello", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(getApplication(), "Errore nel download del modello Whisper", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // Gemma LLM Model State
+    val gemmaDownloadState = llmEngine.modelManager.downloadState
+
+    fun downloadGemmaModel() {
+        viewModelScope.launch {
+            val ok = llmEngine.modelManager.downloadModel()
+            withContext(Dispatchers.Main) {
+                if (ok) {
+                    Toast.makeText(getApplication(), "Modello Gemma 2B On-Device pronto!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Errore nel download del modello Gemma", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -322,6 +353,101 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         mediaPlayer = null
         _isPlaying.value = false
         _playingNoteId.value = null
+    }
+
+    fun refreshRssFeeds() {
+        viewModelScope.launch {
+            _isRefreshingFeeds.value = true
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Aggiornamento feed RSS in corso...", Toast.LENGTH_SHORT).show()
+            }
+            val count = rssManager.fetchAllFeeds()
+            _isRefreshingFeeds.value = false
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "$count articoli sincronizzati!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun pushArticleToDevice(article: ArticleEntity) {
+        viewModelScope.launch {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Invio articolo '${article.title}' a ED1...", Toast.LENGTH_SHORT).show()
+            }
+            val ok = rssManager.pushArticleToDevice(article)
+            withContext(Dispatchers.Main) {
+                if (ok) {
+                    Toast.makeText(getApplication(), "Articolo inviato a ED1 con successo!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Errore nell'invio a ED1 (192.168.4.1)", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun pushAllArticlesToDevice() {
+        viewModelScope.launch {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Invio articoli a ED1 in corso...", Toast.LENGTH_SHORT).show()
+            }
+            val count = rssManager.pushAllPendingArticles()
+            withContext(Dispatchers.Main) {
+                if (count > 0) {
+                    Toast.makeText(getApplication(), "$count articoli inviati a ED1!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Nessun nuovo articolo o ED1 non raggiungibile", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun addRssFeed(title: String, url: String, category: String = "Custom") {
+        viewModelScope.launch(Dispatchers.IO) {
+            val feed = RssFeedEntity(
+                title = title.trim(),
+                url = url.trim(),
+                category = category.trim()
+            )
+            rssDao.insertFeed(feed)
+            rssManager.fetchFeedArticles(feed)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Feed '$title' aggiunto!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun updateRssFeed(feed: RssFeedEntity, newTitle: String, newUrl: String, newCategory: String = "Custom") {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = feed.copy(
+                title = newTitle.trim(),
+                url = newUrl.trim(),
+                category = newCategory.trim()
+            )
+            rssDao.updateFeed(updated)
+            rssManager.fetchFeedArticles(updated)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Feed '${updated.title}' aggiornato!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    suspend fun testFeedUrl(url: String): com.es1.companion.domain.rss.FeedValidationResult {
+        return rssManager.validateFeedUrl(url)
+    }
+
+    fun deleteRssFeed(feed: RssFeedEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            rssDao.deleteFeed(feed)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Feed rimosso", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun toggleArticleRead(article: ArticleEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            rssDao.markArticleRead(article.id, !article.isRead)
+        }
     }
 
     override fun onCleared() {

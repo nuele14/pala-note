@@ -172,6 +172,70 @@ void handleApiCleanSynced() {
   transferServer.send(200, "application/json", resp);
 }
 
+void handleApiArticlePush() {
+  String body = "";
+  if (transferServer.hasArg("plain")) {
+    body = transferServer.arg("plain");
+  }
+
+  String title = "Articolo";
+  String tag = "News";
+  String content = "";
+
+  if (transferServer.hasArg("title")) title = transferServer.arg("title");
+  if (transferServer.hasArg("tag")) tag = transferServer.arg("tag");
+  if (transferServer.hasArg("content")) content = transferServer.arg("content");
+
+  if (content.length() == 0 && body.length() > 0) {
+    int titleIdx = body.indexOf("\"title\":");
+    if (titleIdx >= 0) {
+      int start = body.indexOf("\"", titleIdx + 8);
+      int end = body.indexOf("\"", start + 1);
+      if (start >= 0 && end > start) title = body.substring(start + 1, end);
+    }
+    int tagIdx = body.indexOf("\"tag\":");
+    if (tagIdx >= 0) {
+      int start = body.indexOf("\"", tagIdx + 6);
+      int end = body.indexOf("\"", start + 1);
+      if (start >= 0 && end > start) tag = body.substring(start + 1, end);
+    }
+    int contentIdx = body.indexOf("\"content\":");
+    if (contentIdx >= 0) {
+      int start = body.indexOf("\"", contentIdx + 10);
+      int end = body.lastIndexOf("\"");
+      if (start >= 0 && end > start) {
+        content = body.substring(start + 1, end);
+        content.replace("\\n", "\n");
+        content.replace("\\\"", "\"");
+        content.replace("\\\\", "\\");
+      }
+    } else {
+      content = body;
+    }
+  }
+
+  if (content.length() == 0 && title.length() > 0) {
+    content = "# " + title;
+  }
+
+  int num = nextNoteNumber();
+  char mdPath[64];
+  snprintf(mdPath, sizeof(mdPath), "%s/note_%03d.md", NOTES_DIR, num);
+  File f = SD_MMC.open(mdPath, FILE_WRITE);
+  if (f) {
+    f.print(content);
+    f.close();
+  }
+
+  writeNoteMeta(num, tag.c_str());
+  addToIndex(num, tag.c_str(), true);
+  saveIndex();
+
+  String resp = "{\"status\":\"ok\",\"num\":" + String(num) + ",\"title\":\"" + title + "\"}";
+  transferServer.sendHeader("Access-Control-Allow-Origin", "*");
+  transferServer.send(200, "application/json", resp);
+}
+
 void handleApiSyncDone() {
   syncDoneFlag = true;
   transferServer.sendHeader("Access-Control-Allow-Origin", "*");
@@ -467,6 +531,8 @@ void setupTransferServer() {
   transferServer.on("/api/notes/audio", HTTP_GET,  handleApiNoteAudio);
   transferServer.on("/api/notes/ack",          HTTP_ANY,  handleApiNoteAck);
   transferServer.on("/api/notes/clean_synced", HTTP_ANY,  handleApiCleanSynced);
+  transferServer.on("/api/articles/push",      HTTP_POST, handleApiArticlePush);
+  transferServer.on("/api/notes/push",         HTTP_POST, handleApiArticlePush);
   transferServer.on("/api/sync/done",          HTTP_ANY,  handleApiSyncDone);
 
   // Web portal routes

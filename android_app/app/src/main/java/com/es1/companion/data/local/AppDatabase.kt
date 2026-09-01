@@ -10,13 +10,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [NoteEntity::class, TagRuleEntity::class],
-    version = 1,
+    entities = [NoteEntity::class, TagRuleEntity::class, RssFeedEntity::class, ArticleEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun noteDao(): NoteDao
+    abstract fun rssDao(): RssDao
 
     companion object {
         @Volatile
@@ -29,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "es1_notes.db"
                 )
+                    .fallbackToDestructiveMigration()
                     .addCallback(DatabaseCallback(scope))
                     .build()
                 INSTANCE = instance
@@ -44,8 +46,36 @@ abstract class AppDatabase : RoomDatabase() {
                 INSTANCE?.let { database ->
                     scope.launch {
                         populateDefaultTagRules(database.noteDao())
+                        populateDefaultRssFeeds(database.rssDao())
                     }
                 }
+            }
+
+            suspend fun populateDefaultRssFeeds(dao: RssDao) {
+                val defaultFeeds = listOf(
+                    RssFeedEntity(
+                        id = "hn_top",
+                        title = "Hacker News",
+                        url = "https://news.ycombinator.com/rss",
+                        category = "Tech",
+                        enabled = true
+                    ),
+                    RssFeedEntity(
+                        id = "antirez_blog",
+                        title = "Antirez Blog",
+                        url = "http://antirez.com/rss",
+                        category = "Programming",
+                        enabled = true
+                    ),
+                    RssFeedEntity(
+                        id = "ars_technica",
+                        title = "Ars Technica",
+                        url = "https://feeds.arstechnica.com/arstechnica/index",
+                        category = "Tech",
+                        enabled = true
+                    )
+                )
+                dao.insertFeeds(defaultFeeds)
             }
 
             suspend fun populateDefaultTagRules(dao: NoteDao) {

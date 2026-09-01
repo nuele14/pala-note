@@ -88,5 +88,9 @@ dependencies {
     // On-Device Whisper STT (Sherpa-ONNX)
     implementation(libs.sherpa.onnx)
 
+    // On-Device Gemma LLM Inference (MediaPipe Tasks GenAI)
+    implementation(libs.mediapipe.genai)
+
+    testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
 }

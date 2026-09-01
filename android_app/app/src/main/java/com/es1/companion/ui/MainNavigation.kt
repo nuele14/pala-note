@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.es1.companion.ui.components.NoteDetailBottomSheet
 import com.es1.companion.ui.components.SyncModalDialog
+import androidx.compose.material.icons.rounded.Article
+import com.es1.companion.ui.screens.ArticlesScreen
 import com.es1.companion.ui.screens.FeedScreen
 import com.es1.companion.ui.screens.SearchScreen
 import com.es1.companion.ui.screens.SettingsScreen
@@ -50,6 +52,10 @@ fun MainNavigation(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     val notes by viewModel.notes.collectAsState()
+    val articles by viewModel.articles.collectAsState()
+    val feeds by viewModel.feeds.collectAsState()
+    val isRefreshingFeeds by viewModel.isRefreshingFeeds.collectAsState()
+
     val selectedTag by viewModel.selectedTag.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
@@ -62,6 +68,7 @@ fun MainNavigation(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val modelDownloadState by viewModel.modelDownloadState.collectAsState()
+    val gemmaDownloadState by viewModel.gemmaDownloadState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -115,8 +122,8 @@ fun MainNavigation(
                 NavigationBarItem(
                     selected = (selectedTab == 1),
                     onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Rounded.Search, contentDescription = "Cerca") },
-                    label = { Text("Cerca") },
+                    icon = { Icon(Icons.Rounded.Article, contentDescription = "Articoli") },
+                    label = { Text("Articoli") },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -125,6 +132,16 @@ fun MainNavigation(
                 NavigationBarItem(
                     selected = (selectedTab == 2),
                     onClick = { selectedTab = 2 },
+                    icon = { Icon(Icons.Rounded.Search, contentDescription = "Cerca") },
+                    label = { Text("Cerca") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                )
+                NavigationBarItem(
+                    selected = (selectedTab == 3),
+                    onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Rounded.Settings, contentDescription = "Impostazioni") },
                     label = { Text("Impostazioni") },
                     colors = NavigationBarItemDefaults.colors(
@@ -162,20 +179,35 @@ fun MainNavigation(
                     onTagSelected = { viewModel.selectTag(it) },
                     onNoteClick = { viewModel.openNoteDetail(it) }
                 )
-                1 -> SearchScreen(
+                1 -> ArticlesScreen(
+                    articles = articles,
+                    feeds = feeds,
+                    isRefreshing = isRefreshingFeeds,
+                    onRefreshFeeds = { viewModel.refreshRssFeeds() },
+                    onPushArticle = { viewModel.pushArticleToDevice(it) },
+                    onPushAllArticles = { viewModel.pushAllArticlesToDevice() },
+                    onAddFeed = { title, url, category -> viewModel.addRssFeed(title, url, category) },
+                    onEditFeed = { feed, title, url, category -> viewModel.updateRssFeed(feed, title, url, category) },
+                    onDeleteFeed = { viewModel.deleteRssFeed(it) },
+                    onTestFeedUrl = { viewModel.testFeedUrl(it) },
+                    onToggleRead = { viewModel.toggleArticleRead(it) }
+                )
+                2 -> SearchScreen(
                     query = searchQuery,
                     onQueryChange = { viewModel.onSearchQueryChange(it) },
                     results = searchResults,
                     onNoteClick = { viewModel.openNoteDetail(it) }
                 )
-                2 -> SettingsScreen(
+                3 -> SettingsScreen(
                     themeMode = themeMode,
                     onThemeModeChange = { viewModel.setThemeMode(it) },
                     tagRules = tagRules,
                     onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
                     onCleanDeviceMemory = { viewModel.cleanDeviceMemory() },
                     modelDownloadState = modelDownloadState,
-                    onDownloadModel = { viewModel.downloadWhisperModel() }
+                    onDownloadModel = { viewModel.downloadWhisperModel() },
+                    gemmaDownloadState = gemmaDownloadState,
+                    onDownloadGemmaModel = { viewModel.downloadGemmaModel() }
                 )
             }
         }

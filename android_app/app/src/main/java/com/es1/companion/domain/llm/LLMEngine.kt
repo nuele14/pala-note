@@ -12,6 +12,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
+
 data class VoiceTagResult(
     val tag: String,
     val cleanBody: String
@@ -19,11 +21,33 @@ data class VoiceTagResult(
 
 class LLMEngine(
     private val context: Context,
-    private val noteDao: NoteDao
+    private val noteDao: NoteDao,
+    val modelManager: LlmModelManager = LlmModelManager(context)
 ) {
     private val TAG = "LLMEngine"
-    private var ollamaHost: String? = null // Optional e.g. "http://192.168.1.100:11434"
-    private var ollamaModel: String = "qwen2.5:1.5b"
+    private var llmInference: LlmInference? = null
+
+    @Synchronized
+    private fun getOrCreateLlm(): LlmInference? {
+        if (llmInference != null) return llmInference
+        if (!modelManager.isModelReady()) return null
+
+        return try {
+            Log.d(TAG, "Initializing on-device Gemma LlmInference...")
+            val options = LlmInference.LlmInferenceOptions.builder()
+                .setModelPath(modelManager.getModelPath())
+                .setMaxTokens(512)
+                .setTemperature(0.2f)
+                .build()
+            LlmInference.createFromOptions(context, options).also {
+                llmInference = it
+                Log.d(TAG, "Gemma LlmInference initialized successfully.")
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to initialize MediaPipe Gemma: ${t.message}", t)
+            null
+        }
+    }
 
     suspend fun elaborateNote(noteId: String): NoteEntity? = withContext(Dispatchers.IO) {
         val note = noteDao.getNoteByIdDirect(noteId)
@@ -51,7 +75,22 @@ class LLMEngine(
 
         Log.d(TAG, "Elaborating note #${note.deviceNoteNum} (Tag: $assignedTag)...")
 
-        var result = applyHeuristicElaboration(assignedTag, cleanUserText)
+        // 2. Esecuzione on-device: Gemma se disponibile, altrimenti sintesi euristica
+        var result: String? = null
+        val llm = getOrCreateLlm()
+        if (llm != null) {
+            try {
+                val gemmaPrompt = "<start_of_turn>user\nSei l'assistente per note vocali ES1. Rielabora e formatta il seguente testo vocale per il tag '$assignedTag'.\nIstruzioni: $prompt\n\nTesto: $cleanUserText<end_of_turn>\n<start_of_turn>model\n"
+                result = llm.generateResponse(gemmaPrompt)?.trim()
+                Log.d(TAG, "Gemma on-device synthesis generated ${result?.length ?: 0} chars.")
+            } catch (t: Throwable) {
+                Log.w(TAG, "Gemma inference error: ${t.message}", t)
+            }
+        }
+
+        if (result.isNullOrBlank()) {
+            result = applyHeuristicElaboration(assignedTag, cleanUserText)
+        }
 
         val title = extractTitle(cleanUserText, result)
         val updatedNote = note.copy(
