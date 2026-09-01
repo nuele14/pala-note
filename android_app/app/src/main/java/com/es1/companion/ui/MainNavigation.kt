@@ -40,6 +40,7 @@ import com.es1.companion.ui.components.SyncModalDialog
 import com.es1.companion.ui.screens.FeedScreen
 import com.es1.companion.ui.screens.SearchScreen
 import com.es1.companion.ui.screens.SettingsScreen
+import com.es1.companion.ui.theme.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
