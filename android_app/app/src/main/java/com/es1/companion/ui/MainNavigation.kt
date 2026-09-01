@@ -186,6 +186,7 @@ fun MainNavigation(
                     onRefreshFeeds = { viewModel.refreshRssFeeds() },
                     onPushArticle = { viewModel.pushArticleToDevice(it) },
                     onPushAllArticles = { viewModel.pushAllArticlesToDevice() },
+                    onPushSelectedArticles = { viewModel.pushSelectedArticlesToDevice(it) },
                     onAddFeed = { title, url, category -> viewModel.addRssFeed(title, url, category) },
                     onEditFeed = { feed, title, url, category -> viewModel.updateRssFeed(feed, title, url, category) },
                     onDeleteFeed = { viewModel.deleteRssFeed(it) },

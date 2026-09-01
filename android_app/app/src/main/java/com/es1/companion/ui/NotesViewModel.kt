@@ -401,6 +401,34 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun pushSelectedArticlesToDevice(articlesToPush: List<ArticleEntity>) {
+        viewModelScope.launch {
+            if (articlesToPush.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Nessun articolo selezionato", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Invio di ${articlesToPush.size} articoli a ED1 in corso...", Toast.LENGTH_SHORT).show()
+            }
+            var okCount = 0
+            withContext(Dispatchers.IO) {
+                for (art in articlesToPush) {
+                    val ok = rssManager.pushArticleToDevice(art)
+                    if (ok) okCount++
+                }
+            }
+            withContext(Dispatchers.Main) {
+                if (okCount > 0) {
+                    Toast.makeText(getApplication(), "$okCount di ${articlesToPush.size} articoli inviati a ED1!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Errore nell'invio a ED1 (192.168.4.1)", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     fun addRssFeed(title: String, url: String, category: String = "Custom") {
         viewModelScope.launch(Dispatchers.IO) {
             val feed = RssFeedEntity(
