@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material3.LinearProgressIndicator
 import com.es1.companion.domain.stt.ModelDownloadState
+import com.es1.companion.ui.theme.ThemeMode
 
 @Composable
 fun SettingsScreen(
