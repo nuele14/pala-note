@@ -19,6 +19,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.es1.companion.domain.queue.*
+import com.es1.companion.ui.theme.TechFontFamily
+import com.es1.companion.ui.theme.BodyFontFamily
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -42,7 +44,9 @@ fun ProcessingQueueBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp),
+        containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
@@ -66,7 +70,7 @@ fun ProcessingQueueBottomSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("In Corso & Coda", fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal)
+                            Text("[ IN CORSO & CODA ]", fontFamily = TechFontFamily, fontSize = 12.sp, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal)
                             if (count > 0) {
                                 Badge { Text("$count") }
                             }
@@ -81,7 +85,7 @@ fun ProcessingQueueBottomSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("Storico Recenti", fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal)
+                            Text("[ STORICO RECENTI ]", fontFamily = TechFontFamily, fontSize = 12.sp, fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal)
                             if (history.isNotEmpty()) {
                                 Badge(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
                                     Text("${history.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -156,7 +160,7 @@ private fun QueueTabContent(
         // Descrizione fase corrente
         if (phaseSummary != null) {
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -192,7 +196,7 @@ private fun QueueTabContent(
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(0.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
                     border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
                 ) {
@@ -251,7 +255,7 @@ private fun QueueTabContent(
                         // Metriche in tempo reale
                         if (liveProgress != null) {
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -335,8 +339,9 @@ private fun QueueTabContent(
                     items(pendingFiltered, key = { it.id }) { job ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            shape = RoundedCornerShape(0.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -455,7 +460,7 @@ private fun HistoryTabContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onItemClick(item) },
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(0.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = when (item.status) {
                                 JobStatus.FAILED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
@@ -589,7 +594,7 @@ fun JobDetailDialog(
             ) {
                 // Info generali
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(0.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -630,7 +635,7 @@ fun JobDetailDialog(
                         color = MaterialTheme.colorScheme.error
                     )
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(0.dp),
                         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth()
@@ -654,7 +659,7 @@ fun JobDetailDialog(
                         color = Color.Gray
                     )
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(0.dp),
                         color = MaterialTheme.colorScheme.surface,
                         modifier = Modifier.fillMaxWidth()
                     ) {

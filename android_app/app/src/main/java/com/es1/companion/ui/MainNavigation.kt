@@ -36,6 +36,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.es1.companion.ui.theme.TechFontFamily
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import com.es1.companion.ui.components.NoteDetailBottomSheet
 import com.es1.companion.ui.components.SyncModalDialog
 import com.es1.companion.ui.components.ProcessingBanner
@@ -105,9 +109,11 @@ fun MainNavigation(
             TopAppBar(
                 title = {
                     Text(
-                        text = "ES1",
+                        text = ">_ ES1 // COMPANION",
+                        fontFamily = TechFontFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
+                        fontSize = 16.sp,
+                        letterSpacing = 1.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 },
@@ -153,7 +159,7 @@ fun MainNavigation(
                     selected = (selectedTab == 0),
                     onClick = { selectedTab = 0 },
                     icon = { Icon(Icons.Rounded.Notes, contentDescription = "Note") },
-                    label = { Text("Note") },
+                    label = { Text("NOTE", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -163,7 +169,7 @@ fun MainNavigation(
                     selected = (selectedTab == 1),
                     onClick = { selectedTab = 1 },
                     icon = { Icon(Icons.Rounded.Article, contentDescription = "Articoli") },
-                    label = { Text("Articoli") },
+                    label = { Text("FEED", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -173,7 +179,7 @@ fun MainNavigation(
                     selected = (selectedTab == 2),
                     onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Rounded.Search, contentDescription = "Cerca") },
-                    label = { Text("Cerca") },
+                    label = { Text("CERCA", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -183,7 +189,7 @@ fun MainNavigation(
                     selected = (selectedTab == 3),
                     onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Rounded.Settings, contentDescription = "Impostazioni") },
-                    label = { Text("Impostazioni") },
+                    label = { Text("CONFIG", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -196,8 +202,10 @@ fun MainNavigation(
             if (selectedTab == 0) {
                 FloatingActionButton(
                     onClick = { viewModel.openSyncDialog() },
+                    shape = RoundedCornerShape(0.dp),
+                    modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp)),
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Sync,

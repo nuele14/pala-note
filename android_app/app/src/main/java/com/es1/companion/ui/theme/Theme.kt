@@ -14,35 +14,39 @@ enum class ThemeMode(val title: String) {
 }
 
 private val DarkColorScheme = darkColorScheme(
-    primary = ES1Primary,
-    secondary = PurpleGrey80,
-    tertiary = Pink80,
-    background = ES1DarkBackground,
-    surface = ES1DarkSurface,
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = ES1DarkOnSurface,
-    onSurface = ES1DarkOnSurface,
-    surfaceVariant = ES1DarkCard,
-    onSurfaceVariant = ES1DarkOnSurfaceVariant,
-    outline = ES1DarkCardBorder
+    primary = CyberWhite,
+    onPrimary = CyberBlack,
+    primaryContainer = CyberDarkGray,
+    onPrimaryContainer = CyberWhite,
+    secondary = CyberLightGray,
+    onSecondary = CyberBlack,
+    tertiary = CyberMidGray,
+    onTertiary = CyberWhite,
+    background = CyberBlack,
+    onBackground = CyberWhite,
+    surface = CyberDarkSurface,
+    onSurface = CyberWhite,
+    surfaceVariant = CyberDarkCard,
+    onSurfaceVariant = CyberLightGray,
+    outline = CyberDarkCardBorder
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = ES1Primary,
-    secondary = Purple40,
-    tertiary = Pink40,
-    background = ES1LightBackground,
-    surface = ES1LightSurface,
+    primary = SurfingCoral,
     onPrimary = Color.White,
+    primaryContainer = SurfingCoralContainer,
+    onPrimaryContainer = SurfingCoralOnContainer,
+    secondary = SurfingBlack,
     onSecondary = Color.White,
+    tertiary = SurfingGray,
     onTertiary = Color.White,
-    onBackground = ES1LightOnSurface,
-    onSurface = ES1LightOnSurface,
-    surfaceVariant = Color(0xFFF0F2F5),
-    onSurfaceVariant = ES1LightOnSurfaceVariant,
-    outline = ES1LightCardBorder
+    background = SurfingWhite,
+    onBackground = SurfingBlack,
+    surface = SurfingLightSurface,
+    onSurface = SurfingBlack,
+    surfaceVariant = Color(0xFFF2F2F2),
+    onSurfaceVariant = SurfingGray,
+    outline = SurfingLightCardBorder
 )
 
 @Composable

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.es1.companion.data.local.NoteEntity
 import com.es1.companion.ui.components.NoteCard
+import com.es1.companion.ui.theme.TechFontFamily
 
 @Composable
 fun SearchScreen(
@@ -48,8 +49,8 @@ fun SearchScreen(
             value = query,
             onValueChange = onQueryChange,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            placeholder = { Text("Cerca tra tutte le registrazioni...", fontSize = 14.sp) },
+            shape = RoundedCornerShape(0.dp),
+            placeholder = { Text(">_ CERCA TRA LE NOTE...", fontFamily = TechFontFamily, fontSize = 12.sp) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Rounded.Search,
@@ -69,7 +70,7 @@ fun SearchScreen(
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = Color.Transparent
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline
             )
         )
 

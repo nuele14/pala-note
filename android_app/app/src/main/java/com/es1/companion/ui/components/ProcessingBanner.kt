@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.sp
 import com.es1.companion.domain.queue.JobType
 import com.es1.companion.domain.queue.ProcessingJob
 import com.es1.companion.domain.queue.LiveJobProgress
+import com.es1.companion.ui.theme.TechFontFamily
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import java.util.Locale
 
 @Composable
@@ -46,10 +49,10 @@ fun ProcessingBanner(
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 6.dp)
                     .clickable { onClick() },
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(0.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
-                tonalElevation = 6.dp,
-                shadowElevation = 8.dp
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                shadowElevation = 4.dp
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     LinearProgressIndicator(
@@ -92,13 +95,14 @@ fun ProcessingBanner(
                                     Text(
                                         text = currentJob.title,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
+                                        fontFamily = TechFontFamily,
+                                        fontSize = 12.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     if (totalInQueue > 1) {
                                         Surface(
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = RoundedCornerShape(0.dp),
                                             color = MaterialTheme.colorScheme.primaryContainer
                                         ) {
                                             Text(
@@ -127,8 +131,9 @@ fun ProcessingBanner(
 
                                 Text(
                                     text = subtitleText,
-                                    fontSize = 11.sp,
-                                    color = Color.Gray,
+                                    fontSize = 10.sp,
+                                    fontFamily = TechFontFamily,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )

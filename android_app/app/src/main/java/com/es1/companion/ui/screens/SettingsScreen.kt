@@ -18,6 +18,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.border
+import com.es1.companion.ui.theme.TechFontFamily
+import com.es1.companion.ui.theme.BodyFontFamily
 import com.es1.companion.domain.llm.LlmModelInfo
 import com.es1.companion.domain.stt.ModelDownloadState
 import com.es1.companion.ui.theme.ThemeMode
@@ -50,7 +53,8 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "⚙️ Impostazioni AI & Dispositivo",
+            text = ">> CONFIG // AI & DEVICE",
+            fontFamily = TechFontFamily,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
         )
@@ -58,7 +62,8 @@ fun SettingsScreen(
         // 1. Theme Selection Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(0.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
             Column(
@@ -66,7 +71,8 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "🎨 Aspetto & Tema",
+                    text = "// ASPETTO & TEMA",
+                    fontFamily = TechFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
@@ -84,7 +90,7 @@ fun SettingsScreen(
                         OutlinedButton(
                             onClick = { onThemeModeChange(mode) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(0.dp),
                             colors = if (selected) {
                                 ButtonDefaults.outlinedButtonColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -107,7 +113,8 @@ fun SettingsScreen(
         Card(
             onClick = onOpenTagRules,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(0.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
         ) {
             Row(
@@ -152,7 +159,8 @@ fun SettingsScreen(
         // 3. Modelli LLM On-Device (Elaborazione 100% Locale sul Dispositivo)
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(0.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
             Column(
@@ -192,12 +200,12 @@ fun SettingsScreen(
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(0.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isActive && isDownloaded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                                 else MaterialTheme.colorScheme.surface
                             ),
-                            border = if (isActive && isDownloaded) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+                            border = if (isActive && isDownloaded) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                         ) {
                             Column(
                                 modifier = Modifier
@@ -221,7 +229,7 @@ fun SettingsScreen(
                                         )
                                         if (isActive && isDownloaded) {
                                             Surface(
-                                                shape = RoundedCornerShape(6.dp),
+                                                shape = RoundedCornerShape(0.dp),
                                                 color = MaterialTheme.colorScheme.primary
                                             ) {
                                                 Text(
@@ -236,7 +244,7 @@ fun SettingsScreen(
                                     }
 
                                     Surface(
-                                        shape = RoundedCornerShape(6.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         color = MaterialTheme.colorScheme.surfaceVariant
                                     ) {
                                         Text(
@@ -312,7 +320,7 @@ fun SettingsScreen(
                                                         onSetActiveLlmModel(model.id)
                                                         Toast.makeText(context, "${model.name} impostato come attivo", Toast.LENGTH_SHORT).show()
                                                     },
-                                                    shape = RoundedCornerShape(8.dp),
+                                                    shape = RoundedCornerShape(0.dp),
                                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                                 ) {
                                                     Text("Imposta Attivo", fontSize = 11.sp)
@@ -338,7 +346,7 @@ fun SettingsScreen(
                                     // Not downloaded
                                     OutlinedButton(
                                         onClick = { onDownloadLlmModel(model.id) },
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = RoundedCornerShape(0.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Icon(imageVector = Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -364,7 +372,8 @@ fun SettingsScreen(
         // 4. Modello Whisper On-Device STT
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(0.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
             Column(
@@ -404,7 +413,7 @@ fun SettingsScreen(
                     is ModelDownloadState.NotDownloaded -> {
                         OutlinedButton(
                             onClick = onDownloadModel,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(0.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(imageVector = Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -417,7 +426,7 @@ fun SettingsScreen(
                             Text(modelDownloadState.message, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                             Button(
                                 onClick = onDownloadModel,
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(0.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -432,7 +441,8 @@ fun SettingsScreen(
         // 5. Clean Device Memory Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(0.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
             Column(
@@ -452,7 +462,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Button(
                     onClick = onCleanDeviceMemory,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(0.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     modifier = Modifier.fillMaxWidth()
                 ) {

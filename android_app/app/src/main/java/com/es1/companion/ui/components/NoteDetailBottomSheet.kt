@@ -48,6 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.es1.companion.data.local.NoteEntity
 import com.es1.companion.ui.theme.getTagColor
+import com.es1.companion.ui.theme.TechFontFamily
+import com.es1.companion.ui.theme.BodyFontFamily
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,7 +79,7 @@ fun NoteDetailBottomSheet(
                     .padding(vertical = 10.dp)
                     .width(40.dp)
                     .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(Color.DarkGray)
             )
         }
@@ -95,14 +99,15 @@ fun NoteDetailBottomSheet(
             ) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(tagColor)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .border(1.dp, tagColor, RoundedCornerShape(0.dp))
+                        .background(tagColor.copy(alpha = 0.15f))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Text(
-                        text = "#${note.deviceNoteNum} ${note.tag}",
-                        color = Color.White,
-                        fontSize = 13.sp,
+                        text = "[ #${note.deviceNoteNum} // ${note.tag.uppercase()} ]",
+                        color = tagColor,
+                        fontSize = 12.sp,
+                        fontFamily = TechFontFamily,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -110,7 +115,8 @@ fun NoteDetailBottomSheet(
                 Text(
                     text = note.createdUtc.take(16).replace("T", " "),
                     color = Color.Gray,
-                    fontSize = 12.sp
+                    fontSize = 11.sp,
+                    fontFamily = TechFontFamily
                 )
             }
 
@@ -118,8 +124,9 @@ fun NoteDetailBottomSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp))
                     .padding(12.dp)
             ) {
                 Row(
@@ -144,7 +151,8 @@ fun NoteDetailBottomSheet(
                                 note.audioFileSize / 1024
                             ),
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = TechFontFamily
                         )
                     }
 
@@ -153,7 +161,7 @@ fun NoteDetailBottomSheet(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         ),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(0.dp)
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -162,8 +170,9 @@ fun NoteDetailBottomSheet(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isPlaying) "Pausa" else "Riproduci",
-                            fontSize = 12.sp,
+                            text = if (isPlaying) "PAUSA" else "PLAY",
+                            fontSize = 11.sp,
+                            fontFamily = TechFontFamily,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -172,7 +181,8 @@ fun NoteDetailBottomSheet(
 
             // Elaborated Content (Markdown)
             Text(
-                text = "✨ Contenuto Elaborato",
+                text = "// ELABORAZIONE NEURALE",
+                fontFamily = TechFontFamily,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -181,14 +191,16 @@ fun NoteDetailBottomSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp))
                     .padding(14.dp)
             ) {
                 Text(
                     text = note.elaboratedMarkdown ?: "_Nessuna elaborazione disponibile._",
                     fontSize = 14.sp,
-                    lineHeight = 20.sp,
+                    lineHeight = 22.sp,
+                    fontFamily = BodyFontFamily,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -197,8 +209,9 @@ fun NoteDetailBottomSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp))
                     .padding(12.dp)
             ) {
                 Row(
@@ -207,7 +220,8 @@ fun NoteDetailBottomSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "🎙️ Trascrizione Grezza (STT)",
+                        text = "// TRASCRIZIONE AUDIO (STT)",
+                        fontFamily = TechFontFamily,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -225,7 +239,8 @@ fun NoteDetailBottomSheet(
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
-                        lineHeight = 18.sp
+                        lineHeight = 18.sp,
+                        fontFamily = BodyFontFamily
                     )
                 }
             }
@@ -252,7 +267,7 @@ fun NoteDetailBottomSheet(
                 ) {
                     OutlinedButton(
                         onClick = onExportMarkdown,
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(0.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Download,
@@ -260,12 +275,12 @@ fun NoteDetailBottomSheet(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Esporta", fontSize = 12.sp)
+                        Text("ESPORTA", fontSize = 11.sp, fontFamily = TechFontFamily, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
                         onClick = onReElaborate,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(0.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
@@ -276,7 +291,7 @@ fun NoteDetailBottomSheet(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Rielabora", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("RIELABORA", fontSize = 11.sp, fontFamily = TechFontFamily, fontWeight = FontWeight.Bold)
                     }
                 }
             }
