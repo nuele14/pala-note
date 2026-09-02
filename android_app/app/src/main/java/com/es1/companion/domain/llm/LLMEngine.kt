@@ -11,6 +11,21 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.ai.edge.litertlm.Engine as LiteRtEngine
 import com.google.ai.edge.litertlm.EngineConfig as LiteRtEngineConfig
 import com.google.ai.edge.litertlm.Content as LiteRtContent
+import com.google.ai.edge.litertlm.Message as LiteRtMessage
+import com.google.ai.edge.litertlm.MessageCallback as LiteRtMessageCallback
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+data class LlmExecutionResult(
+    val entity: NoteEntity?,
+    val modelName: String,
+    val tokensGenerated: Int,
+    val tokensPerSec: Float,
+    val durationMs: Long,
+    val error: String? = null,
+    val previewText: String? = null
+)
 
 data class VoiceTagResult(
     val tag: String,
@@ -51,29 +66,79 @@ class LLMEngine(
         Log.d(TAG, "On-device LLM engines unloaded from memory (Standby).")
     }
 
-    @Synchronized
-    private fun generateWithLiteRt(modelPath: String, prompt: String): String {
-        var engine = liteRtEngine
-        if (engine == null || currentLiteRtModelPath != modelPath) {
-            try {
-                engine?.close()
-            } catch (_: Throwable) {}
-            liteRtEngine = null
+    private suspend fun generateWithLiteRt(
+        modelPath: String,
+        prompt: String,
+        onProgress: ((tokens: Int, tokSec: Float, elapsedSec: Float, snippet: String) -> Unit)? = null
+    ): Pair<String, Int> {
+        val startTime = System.currentTimeMillis()
+        var engine: LiteRtEngine? = null
+        synchronized(this) {
+            if (liteRtEngine == null || currentLiteRtModelPath != modelPath) {
+                try {
+                    liteRtEngine?.close()
+                } catch (_: Throwable) {}
+                liteRtEngine = null
 
-            Log.d(TAG, "Initializing LiteRT-LM Engine with: $modelPath")
-            val config = LiteRtEngineConfig(modelPath = modelPath)
-            val newEngine = LiteRtEngine(config)
-            newEngine.initialize()
-            liteRtEngine = newEngine
-            currentLiteRtModelPath = modelPath
-            engine = newEngine
-            Log.d(TAG, "LiteRT-LM Engine initialized successfully.")
+                Log.d(TAG, "Initializing LiteRT-LM Engine with: $modelPath")
+                val config = LiteRtEngineConfig(modelPath = modelPath)
+                val newEngine = LiteRtEngine(config)
+                newEngine.initialize()
+                liteRtEngine = newEngine
+                currentLiteRtModelPath = modelPath
+                Log.d(TAG, "LiteRT-LM Engine initialized successfully.")
+            }
+            engine = liteRtEngine
         }
 
-        val conversation = engine.createConversation()
-        val response = conversation.sendMessage(prompt)
-        val textList = response.contents.contents.filterIsInstance<LiteRtContent.Text>().map { it.text }
-        return if (textList.isNotEmpty()) textList.joinToString("\n") else response.toString()
+        val safeEngine = engine ?: throw IllegalStateException("LiteRT-LM engine null after init")
+        val conversation = safeEngine.createConversation()
+        val fullText = StringBuilder()
+        var tokenCount = 0
+        var lastUiUpdate = 0L
+
+        try {
+            suspendCancellableCoroutine<Unit> { cont ->
+                conversation.sendMessageAsync(prompt, object : LiteRtMessageCallback {
+                    override fun onMessage(message: LiteRtMessage) {
+                        val chunk = message.contents.contents.filterIsInstance<LiteRtContent.Text>().joinToString("") { it.text }
+                        if (chunk.isNotEmpty()) {
+                            fullText.append(chunk)
+                            tokenCount++
+                            val now = System.currentTimeMillis()
+                            if (now - lastUiUpdate > 200) {
+                                lastUiUpdate = now
+                                val elapsedSec = (now - startTime) / 1000f
+                                val tokSec = if (elapsedSec > 0) tokenCount / elapsedSec else 0f
+                                onProgress?.invoke(tokenCount, tokSec, elapsedSec, fullText.takeLast(40).toString())
+                            }
+                        }
+                    }
+
+                    override fun onDone() {
+                        if (cont.isActive) cont.resume(Unit)
+                    }
+
+                    override fun onError(error: Throwable) {
+                        Log.e(TAG, "MessageCallback onError: ${error.message}", error)
+                        if (cont.isActive) cont.resumeWithException(error)
+                    }
+                })
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Streaming via MessageCallback encountered error, fallback to sync: ${t.message}")
+            if (fullText.isEmpty()) {
+                val response = conversation.sendMessage(prompt)
+                val textList = response.contents.contents.filterIsInstance<LiteRtContent.Text>().map { it.text }
+                val respStr = if (textList.isNotEmpty()) textList.joinToString("\n") else response.toString()
+                fullText.append(respStr)
+                tokenCount = (respStr.length / 4).coerceAtLeast(1)
+            }
+        }
+
+        val resultStr = fullText.toString()
+        val finalCount = if (tokenCount > 0) tokenCount else (resultStr.length / 4).coerceAtLeast(1)
+        return Pair(resultStr, finalCount)
     }
 
     @Synchronized
@@ -96,10 +161,16 @@ class LLMEngine(
         return engine.generateResponse(prompt)?.trim() ?: ""
     }
 
-    suspend fun elaborateNote(noteId: String): NoteEntity? = withContext(Dispatchers.IO) {
+    suspend fun elaborateNoteWithMetrics(
+        noteId: String,
+        onProgress: ((tokens: Int, tokSec: Float, elapsedSec: Float, snippet: String) -> Unit)? = null
+    ): LlmExecutionResult = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
+        val activeModelInfo = modelManager.getActiveModelInfo()
+
         val note = noteDao.getNoteByIdDirect(noteId)
             ?: noteDao.getPendingElaborations().find { it.id == noteId }
-            ?: return@withContext null
+            ?: return@withContext LlmExecutionResult(null, activeModelInfo.name, 0, 0f, 0L, "Nota non trovata nel database")
 
         val rawText = note.transcriptionText
         val effectiveText = if (!rawText.isNullOrBlank()) {
@@ -122,29 +193,27 @@ class LLMEngine(
 
         Log.d(TAG, "Starting ON-DEVICE elaboration for note #${note.deviceNoteNum} (Tag: $assignedTag)...")
 
-        val activeModelInfo = modelManager.getActiveModelInfo()
-
         if (!modelManager.isModelReady()) {
-            Log.w(TAG, "Nessun modello LLM pronto sul dispositivo per inferenza.")
+            val err = "Modello ${activeModelInfo.name} non scaricato sul telefono"
+            Log.w(TAG, err)
             val missingMsg = "> ⚠️ **Nessun modello scaricato sul telefono.**\n\n" +
                     "Vai in **Impostazioni** e scarica ${activeModelInfo.name} sul dispositivo.\n\n" +
                     "---\n\n### Testo trascritto:\n$cleanUserText"
             val title = extractTitle(cleanUserText, missingMsg)
-            val updated = note.copy(
-                tag = assignedTag,
-                elaboratedTitle = title,
-                elaboratedMarkdown = missingMsg
-            )
+            val updated = note.copy(tag = assignedTag, elaboratedTitle = title, elaboratedMarkdown = missingMsg)
             noteDao.updateNote(updated)
-            return@withContext updated
+            val durationMs = System.currentTimeMillis() - startTime
+            return@withContext LlmExecutionResult(updated, activeModelInfo.name, 0, 0f, durationMs, err)
         }
 
         val modelPath = modelManager.getModelPath()
         if (modelPath == null) {
-            val missingMsg = "> ⚠️ **File modello non trovato sul dispositivo.**\n\n### Testo trascritto:\n$cleanUserText"
+            val err = "File del modello non trovato sul dispositivo"
+            val missingMsg = "> ⚠️ **$err.**\n\n### Testo trascritto:\n$cleanUserText"
             val updated = note.copy(tag = assignedTag, elaboratedMarkdown = missingMsg)
             noteDao.updateNote(updated)
-            return@withContext updated
+            val durationMs = System.currentTimeMillis() - startTime
+            return@withContext LlmExecutionResult(updated, activeModelInfo.name, 0, 0f, durationMs, err)
         }
 
         // 2. Costruzione del prompt secondo il template del modello selezionato
@@ -155,21 +224,30 @@ class LLMEngine(
         }
 
         var result: String? = null
+        var tokensCount = 0
+        var executionError: String? = null
         val isLiteRt = modelPath.endsWith(".litertlm")
 
         try {
             Log.d(TAG, "Running on-device inference with ${activeModelInfo.name} (engine=${if (isLiteRt) "LiteRT-LM" else "MediaPipe"})...")
-            result = if (isLiteRt) {
-                generateWithLiteRt(modelPath, formattedPrompt)
+            if (isLiteRt) {
+                val pair = generateWithLiteRt(modelPath, formattedPrompt, onProgress)
+                result = pair.first
+                tokensCount = pair.second
             } else {
-                generateWithMediaPipe(modelPath, formattedPrompt)
+                result = generateWithMediaPipe(modelPath, formattedPrompt)
+                tokensCount = (result.length / 4).coerceAtLeast(1)
             }
-            Log.d(TAG, "Inference completed (${result.length} chars generated).")
+            Log.d(TAG, "Inference completed ($tokensCount tokens, ${result.length} chars).")
         } catch (t: Throwable) {
             val err = "${t.javaClass.simpleName}: ${t.localizedMessage ?: t.message}"
             Log.e(TAG, "Inference error on ${activeModelInfo.name}: $err", t)
+            executionError = err
             result = "> ⚠️ **Errore durante l'inferenza on-device (${activeModelInfo.name}):**\n\n`$err`\n\n---\n\n### Testo Trascritto:\n$cleanUserText"
         }
+
+        val durationMs = System.currentTimeMillis() - startTime
+        val tokSec = if (durationMs > 0 && tokensCount > 0) (tokensCount * 1000f) / durationMs else 0f
 
         val finalMarkdown = result?.ifBlank { null }
             ?: "> ⚠️ Il modello non ha generato output.\n\n### Testo Trascritto:\n$cleanUserText"
@@ -182,8 +260,19 @@ class LLMEngine(
         )
 
         noteDao.updateNote(updatedNote)
-        return@withContext updatedNote
+        val preview = cleanUserText.take(100)
+        return@withContext LlmExecutionResult(
+            entity = updatedNote,
+            modelName = activeModelInfo.name,
+            tokensGenerated = tokensCount,
+            tokensPerSec = tokSec,
+            durationMs = durationMs,
+            error = executionError,
+            previewText = preview
+        )
     }
+
+    suspend fun elaborateNote(noteId: String): NoteEntity? = elaborateNoteWithMetrics(noteId).entity
 
     suspend fun processPendingElaborations(): Int = withContext(Dispatchers.IO) {
         val pending = noteDao.getPendingElaborations()

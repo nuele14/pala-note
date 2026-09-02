@@ -123,6 +123,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     val processingQueue: StateFlow<List<com.es1.companion.domain.queue.ProcessingJob>> = queueManager.allJobs
     val isProcessing: StateFlow<Boolean> = queueManager.isProcessing
     val processingPhaseSummary: StateFlow<String?> = queueManager.phaseSummary
+    val liveProgress: StateFlow<com.es1.companion.domain.queue.LiveJobProgress?> = queueManager.liveProgress
+    val processingHistory: StateFlow<List<com.es1.companion.domain.queue.ProcessingJobHistory>> = queueManager.history
 
     private val _showQueueSheet = MutableStateFlow(false)
     val showQueueSheet: StateFlow<Boolean> = _showQueueSheet.asStateFlow()
@@ -131,6 +133,17 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     fun closeQueueSheet() { _showQueueSheet.value = false }
     fun cancelProcessingJob(jobId: String) = queueManager.cancelJob(jobId)
     fun cancelAllProcessingJobs() = queueManager.cancelAllJobs()
+    fun clearProcessingHistory() = queueManager.clearHistory()
+
+    fun retryJobFromHistory(historyItem: com.es1.companion.domain.queue.ProcessingJobHistory) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val note = noteDao.getNoteByIdDirect(historyItem.noteId) ?: return@launch
+            queueManager.enqueueNote(note)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Nota #${note.deviceNoteNum} riaccodata per elaborazione", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -250,7 +263,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     Log.d(TAG, "Accodamento note sincronizzate nella coda di elaborazione batch...")
                     val pendingTranscriptions = noteDao.getPendingTranscriptions()
                     val pendingElaborations = noteDao.getPendingElaborations()
-                    val allPending = (pendingTranscriptions + pendingElaborations).distinctBy { it.id }
+                    val allPending =
+                        (pendingTranscriptions + pendingElaborations).distinctBy { it.id }
                     if (allPending.isNotEmpty()) {
                         queueManager.enqueueBatch(allPending)
                     }
@@ -265,7 +279,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             if (rule != null) {
                 noteDao.updateTagRule(rule.copy(systemPrompt = prompt.trim()))
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Prompt salvato per tag '$tag'", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Prompt salvato per tag '$tag'",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -279,7 +297,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun reElaborateNote(note: NoteEntity) {
         queueManager.enqueueNote(note)
-        Toast.makeText(getApplication(), "Nota #${note.deviceNoteNum} aggiunta alla coda", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            getApplication(),
+            "Nota #${note.deviceNoteNum} aggiunta alla coda",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     fun exportMarkdown(note: NoteEntity) {
@@ -287,9 +309,14 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             val path = exporter.exportNoteEntity(note)
             withContext(Dispatchers.Main) {
                 if (path != null) {
-                    Toast.makeText(getApplication(), "Esportato in: $path", Toast.LENGTH_LONG).show()
+                    Toast.makeText(getApplication(), "Esportato in: $path", Toast.LENGTH_LONG)
+                        .show()
                 } else {
-                    Toast.makeText(getApplication(), "Errore durante l'esportazione", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Errore durante l'esportazione",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -324,9 +351,17 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             }
             withContext(Dispatchers.Main) {
                 if (result) {
-                    Toast.makeText(getApplication(), "Memoria ES1 pulita con successo!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Memoria ES1 pulita con successo!",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } else {
-                    Toast.makeText(getApplication(), "Connettiti alla rete ES1 per pulire la memoria", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Connettiti alla rete ES1 per pulire la memoria",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -343,7 +378,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         val file = File(note.audioLocalPath)
         if (!file.exists()) {
             Log.w(TAG, "Audio file not found at ${note.audioLocalPath}")
-            Toast.makeText(getApplication(), "File audio non trovato", Toast.LENGTH_SHORT).show()
+            Toast.makeText(getApplication(), "File audio non trovato", Toast.LENGTH_SHORT)
+                .show()
             return
         }
 
@@ -380,7 +416,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 if (it.isPlaying) it.stop()
                 it.release()
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
         mediaPlayer = null
         _isPlaying.value = false
@@ -391,12 +428,20 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isRefreshingFeeds.value = true
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Aggiornamento feed RSS in corso...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Aggiornamento feed RSS in corso...",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             val count = rssManager.fetchAllFeeds()
             _isRefreshingFeeds.value = false
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "$count articoli sincronizzati!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "$count articoli sincronizzati!",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -404,20 +449,36 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     fun pushArticleToDevice(article: ArticleEntity) {
         viewModelScope.launch {
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Invio articolo '${article.title}' a ED1...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Invio articolo '${article.title}' a ED1...",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             val ok = rssManager.pushArticleToDevice(article)
             withContext(Dispatchers.Main) {
                 if (ok) {
-                    Toast.makeText(getApplication(), "Articolo inviato a ED1 con successo!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Articolo inviato a ED1 con successo!",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } else {
-                    Toast.makeText(getApplication(), "Errore nell'invio a ED1 (192.168.4.1)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Errore nell'invio a ED1 (192.168.4.1)",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
     }
 
-    fun queueArticlesForSync(articleIds: List<String>, replaceExisting: Boolean = false, targetDeviceId: String = "ALL") {
+    fun queueArticlesForSync(
+        articleIds: List<String>,
+        replaceExisting: Boolean = false,
+        targetDeviceId: String = "ALL"
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             if (articleIds.isEmpty()) return@launch
             if (replaceExisting) {
@@ -426,7 +487,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             rssDao.queueArticlesForSync(articleIds, targetDeviceId)
             withContext(Dispatchers.Main) {
                 val mode = if (replaceExisting) "sostituiti" else "aggiunti"
-                Toast.makeText(getApplication(), "${articleIds.size} articoli $mode nella lista per ED1!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "${articleIds.size} articoli $mode nella lista per ED1!",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -435,7 +500,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             rssDao.removeFromSyncQueue(articleId)
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Articolo rimosso dalla lista per ED1", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Articolo rimosso dalla lista per ED1",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -444,7 +513,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             rssDao.clearSyncQueue()
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Lista di sincronizzazione ED1 svuotata", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Lista di sincronizzazione ED1 svuotata",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -454,12 +527,20 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             if (article.queuedForSync) {
                 rssDao.removeFromSyncQueue(article.id)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Articolo rimosso dalla lista ED1", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Articolo rimosso dalla lista ED1",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             } else {
                 rssDao.queueArticlesForSync(listOf(article.id), targetDeviceId)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Articolo aggiunto alla lista ED1!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Articolo aggiunto alla lista ED1!",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -475,12 +556,18 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             rssDao.insertFeed(feed)
             rssManager.fetchFeedArticles(feed)
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Feed '$title' aggiunto!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(getApplication(), "Feed '$title' aggiunto!", Toast.LENGTH_SHORT)
+                    .show()
             }
         }
     }
 
-    fun updateRssFeed(feed: RssFeedEntity, newTitle: String, newUrl: String, newCategory: String = "Custom") {
+    fun updateRssFeed(
+        feed: RssFeedEntity,
+        newTitle: String,
+        newUrl: String,
+        newCategory: String = "Custom"
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = feed.copy(
                 title = newTitle.trim(),
@@ -490,7 +577,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             rssDao.updateFeed(updated)
             rssManager.fetchFeedArticles(updated)
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Feed '${updated.title}' aggiornato!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Feed '${updated.title}' aggiornato!",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

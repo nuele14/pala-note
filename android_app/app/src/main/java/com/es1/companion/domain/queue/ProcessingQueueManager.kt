@@ -38,6 +38,32 @@ data class ProcessingJob(
     val error: String? = null
 )
 
+data class LiveJobProgress(
+    val statusText: String,
+    val tokensGenerated: Int = 0,
+    val tokensPerSec: Float = 0f,
+    val audioDurationSec: Float = 0f,
+    val elapsedSec: Float = 0f,
+    val snippet: String = ""
+)
+
+data class ProcessingJobHistory(
+    val id: String = UUID.randomUUID().toString(),
+    val noteId: String,
+    val noteNum: Int,
+    val noteTag: String,
+    val type: JobType,
+    val engineName: String,
+    val status: JobStatus,
+    val timestamp: Long = System.currentTimeMillis(),
+    val durationMs: Long,
+    val tokensGenerated: Int? = null,
+    val tokensPerSec: Float? = null,
+    val audioDurationSec: Float? = null,
+    val errorDetails: String? = null,
+    val previewResult: String? = null
+)
+
 class ProcessingQueueManager(
     private val sttEngine: STTEngine,
     private val llmEngine: LLMEngine,
@@ -62,9 +88,23 @@ class ProcessingQueueManager(
     private val _phaseSummary = MutableStateFlow<String?>(null)
     val phaseSummary: StateFlow<String?> = _phaseSummary.asStateFlow()
 
+    private val _liveProgress = MutableStateFlow<LiveJobProgress?>(null)
+    val liveProgress: StateFlow<LiveJobProgress?> = _liveProgress.asStateFlow()
+
+    private val _history = MutableStateFlow<List<ProcessingJobHistory>>(emptyList())
+    val history: StateFlow<List<ProcessingJobHistory>> = _history.asStateFlow()
+
     private var workerJob: Job? = null
     private var activeExecutionJob: Job? = null
     private var standbyJob: Job? = null
+
+    fun clearHistory() {
+        _history.value = emptyList()
+    }
+
+    private fun addHistory(item: ProcessingJobHistory) {
+        _history.value = listOf(item) + _history.value.take(29)
+    }
 
     /**
      * Accoda una singola nota per elaborazione completa o parziale.
@@ -156,14 +196,44 @@ class ProcessingQueueManager(
                     activeExecutionJob?.cancel()
                     activeExecutionJob = null
                     _currentJob.value = null
+                    _liveProgress.value = null
+                    addHistory(
+                        ProcessingJobHistory(
+                            noteId = current.noteId,
+                            noteNum = current.noteNum,
+                            noteTag = current.noteTag,
+                            type = current.type,
+                            engineName = if (current.type == JobType.TRANSCRIPTION) "Whisper" else "LiteRT-LM",
+                            status = JobStatus.CANCELLED,
+                            durationMs = 0L,
+                            errorDetails = "Interrotto manualmente dall'utente"
+                        )
+                    )
                 } else {
+                    val removedFromStt = transcriptionQueue.filter { it.id == jobId }
+                    val removedFromLlm = synthesisQueue.filter { it.id == jobId }
                     transcriptionQueue.removeAll { it.id == jobId }
                     synthesisQueue.removeAll { it.id == jobId }
+                    (removedFromStt + removedFromLlm).forEach { item ->
+                        addHistory(
+                            ProcessingJobHistory(
+                                noteId = item.noteId,
+                                noteNum = item.noteNum,
+                                noteTag = item.noteTag,
+                                type = item.type,
+                                engineName = if (item.type == JobType.TRANSCRIPTION) "Whisper" else "LiteRT-LM",
+                                status = JobStatus.CANCELLED,
+                                durationMs = 0L,
+                                errorDetails = "Rimosso dalla coda prima dell'avvio"
+                            )
+                        )
+                    }
                 }
                 updateAllJobsList()
                 if (transcriptionQueue.isEmpty() && synthesisQueue.isEmpty() && _currentJob.value == null) {
                     _isProcessing.value = false
                     _phaseSummary.value = null
+                    _liveProgress.value = null
                     startStandbyTimer()
                 }
             }
@@ -182,6 +252,22 @@ class ProcessingQueueManager(
                 workerJob?.cancel()
                 workerJob = null
 
+                val current = _currentJob.value
+                if (current != null) {
+                    addHistory(
+                        ProcessingJobHistory(
+                            noteId = current.noteId,
+                            noteNum = current.noteNum,
+                            noteTag = current.noteTag,
+                            type = current.type,
+                            engineName = if (current.type == JobType.TRANSCRIPTION) "Whisper" else "LiteRT-LM",
+                            status = JobStatus.CANCELLED,
+                            durationMs = 0L,
+                            errorDetails = "Interrotto (cancellazione globale della coda)"
+                        )
+                    )
+                }
+
                 transcriptionQueue.clear()
                 synthesisQueue.clear()
 
@@ -189,6 +275,7 @@ class ProcessingQueueManager(
                 _allJobs.value = emptyList()
                 _isProcessing.value = false
                 _phaseSummary.value = null
+                _liveProgress.value = null
 
                 // Standby immediato: scarica i modelli
                 sttEngine.unloadEngine()
@@ -222,6 +309,7 @@ class ProcessingQueueManager(
                     _currentJob.value = null
                     _isProcessing.value = false
                     _phaseSummary.value = null
+                    _liveProgress.value = null
                     updateAllJobsList()
                     startStandbyTimer()
                     return
@@ -229,6 +317,7 @@ class ProcessingQueueManager(
 
                 nextJob?.let { job ->
                     _currentJob.value = job.copy(status = JobStatus.RUNNING)
+                    _liveProgress.value = LiveJobProgress("Avvio ${job.title}...")
                     updateAllJobsList()
                 }
             }
@@ -241,8 +330,31 @@ class ProcessingQueueManager(
                     when (job.type) {
                         JobType.TRANSCRIPTION -> {
                             Log.d(TAG, "Executing STT job: ${job.title}")
-                            val text = sttEngine.transcribeNote(job.noteId)
-                            if (text != null) {
+                            val res = sttEngine.transcribeNoteWithMetrics(job.noteId) { status, audioSec, elapsedSec ->
+                                _liveProgress.value = LiveJobProgress(
+                                    statusText = status,
+                                    audioDurationSec = audioSec,
+                                    elapsedSec = elapsedSec
+                                )
+                            }
+
+                            val isSuccess = res.text != null && res.error == null
+                            addHistory(
+                                ProcessingJobHistory(
+                                    noteId = job.noteId,
+                                    noteNum = job.noteNum,
+                                    noteTag = job.noteTag,
+                                    type = JobType.TRANSCRIPTION,
+                                    engineName = "Whisper Small IT",
+                                    status = if (isSuccess) JobStatus.COMPLETED else JobStatus.FAILED,
+                                    durationMs = res.durationMs,
+                                    audioDurationSec = res.audioDurationSec,
+                                    errorDetails = res.error,
+                                    previewResult = res.text?.take(100)
+                                )
+                            )
+
+                            if (isSuccess) {
                                 // Appena trascritta, accoda automaticamente per Fase 2 (LLM)
                                 mutex.withLock {
                                     synthesisQueue.add(
@@ -260,7 +372,32 @@ class ProcessingQueueManager(
                         }
                         JobType.SYNTHESIS -> {
                             Log.d(TAG, "Executing LLM job: ${job.title}")
-                            llmEngine.elaborateNote(job.noteId)
+                            val res = llmEngine.elaborateNoteWithMetrics(job.noteId) { tokens, tokSec, elapsedSec, snippet ->
+                                _liveProgress.value = LiveJobProgress(
+                                    statusText = "Generazione risposta...",
+                                    tokensGenerated = tokens,
+                                    tokensPerSec = tokSec,
+                                    elapsedSec = elapsedSec,
+                                    snippet = snippet
+                                )
+                            }
+
+                            val isSuccess = res.error == null && res.entity != null
+                            addHistory(
+                                ProcessingJobHistory(
+                                    noteId = job.noteId,
+                                    noteNum = job.noteNum,
+                                    noteTag = job.noteTag,
+                                    type = JobType.SYNTHESIS,
+                                    engineName = res.modelName,
+                                    status = if (isSuccess) JobStatus.COMPLETED else JobStatus.FAILED,
+                                    durationMs = res.durationMs,
+                                    tokensGenerated = res.tokensGenerated,
+                                    tokensPerSec = res.tokensPerSec,
+                                    errorDetails = res.error,
+                                    previewResult = res.previewText
+                                )
+                            )
                         }
                     }
                 } catch (ce: CancellationException) {
@@ -268,6 +405,18 @@ class ProcessingQueueManager(
                     throw ce
                 } catch (t: Throwable) {
                     Log.e(TAG, "Error executing job ${job.title}: ${t.message}", t)
+                    addHistory(
+                        ProcessingJobHistory(
+                            noteId = job.noteId,
+                            noteNum = job.noteNum,
+                            noteTag = job.noteTag,
+                            type = job.type,
+                            engineName = if (job.type == JobType.TRANSCRIPTION) "Whisper" else "LiteRT-LM",
+                            status = JobStatus.FAILED,
+                            durationMs = 0L,
+                            errorDetails = "${t.javaClass.simpleName}: ${t.localizedMessage ?: t.message}"
+                        )
+                    )
                 }
             }
 
@@ -277,6 +426,7 @@ class ProcessingQueueManager(
 
             mutex.withLock {
                 _currentJob.value = null
+                _liveProgress.value = null
                 updateAllJobsList()
             }
         }

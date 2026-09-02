@@ -21,12 +21,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.es1.companion.domain.queue.JobType
 import com.es1.companion.domain.queue.ProcessingJob
+import com.es1.companion.domain.queue.LiveJobProgress
+import java.util.Locale
 
 @Composable
 fun ProcessingBanner(
     currentJob: ProcessingJob?,
     totalInQueue: Int,
     phaseSummary: String?,
+    liveProgress: LiveJobProgress? = null,
     onClick: () -> Unit,
     onCancelCurrent: () -> Unit,
     modifier: Modifier = Modifier
@@ -109,8 +112,21 @@ fun ProcessingBanner(
                                     }
                                 }
 
+                                val subtitleText = when {
+                                    liveProgress != null && currentJob.type == JobType.SYNTHESIS && liveProgress.tokensGenerated > 0 -> {
+                                        "${liveProgress.tokensGenerated} token • ${String.format(Locale.US, "%.1f", liveProgress.tokensPerSec)} tok/s • ${String.format(Locale.US, "%.1f", liveProgress.elapsedSec)}s"
+                                    }
+                                    liveProgress != null && currentJob.type == JobType.TRANSCRIPTION && liveProgress.audioDurationSec > 0f -> {
+                                        "Audio ${String.format(Locale.US, "%.1f", liveProgress.audioDurationSec)}s • ${String.format(Locale.US, "%.1f", liveProgress.elapsedSec)}s trascritti"
+                                    }
+                                    liveProgress != null && liveProgress.statusText.isNotBlank() -> {
+                                        liveProgress.statusText
+                                    }
+                                    else -> phaseSummary ?: "Elaborazione in corso..."
+                                }
+
                                 Text(
-                                    text = phaseSummary ?: "Elaborazione in corso...",
+                                    text = subtitleText,
                                     fontSize = 11.sp,
                                     color = Color.Gray,
                                     maxLines = 1,

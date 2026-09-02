@@ -15,6 +15,13 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+data class SttExecutionResult(
+    val text: String?,
+    val audioDurationSec: Float,
+    val durationMs: Long,
+    val error: String? = null
+)
+
 class STTEngine(
     private val context: Context,
     private val noteDao: NoteDao,
@@ -71,37 +78,38 @@ class STTEngine(
     /**
      * Trascrive la nota localmente sul dispositivo con Whisper ONNX.
      */
-    suspend fun transcribeNote(noteId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun transcribeNoteWithMetrics(
+        noteId: String,
+        onProgress: ((status: String, audioDurationSec: Float, elapsedSec: Float) -> Unit)? = null
+    ): SttExecutionResult = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
         try {
             val note = noteDao.getNoteByIdDirect(noteId)
                 ?: noteDao.getPendingTranscriptions().find { it.id == noteId }
-                ?: return@withContext null
+                ?: return@withContext SttExecutionResult(null, 0f, 0L, "Nota non trovata nel database")
 
             val audioFile = File(note.audioLocalPath)
             if (!audioFile.exists() || audioFile.length() == 0L) {
-                Log.w(TAG, "Audio file missing for note #${note.deviceNoteNum} at ${note.audioLocalPath}")
-                return@withContext null
+                val err = "File audio non trovato sul disco: ${audioFile.name}"
+                Log.w(TAG, err)
+                return@withContext SttExecutionResult(null, 0f, 0L, err)
             }
 
             if (!modelManager.isModelReady()) {
-                Log.w(TAG, "Whisper model not ready on disk.")
-                return@withContext null
+                val err = "Modello Whisper non ancora scaricato sul dispositivo"
+                Log.w(TAG, err)
+                return@withContext SttExecutionResult(null, 0f, 0L, err)
             }
-
-            val rec = getOrCreateRecognizer()
-            if (rec == null) {
-                Log.e(TAG, "OfflineRecognizer could not be created.")
-                return@withContext null
-            }
-
-            Log.d(TAG, "Transcribing WAV audio on-device for note #${note.deviceNoteNum} (${audioFile.name})...")
 
             // Legge i campioni PCM 16kHz dal file WAV
             val samples = readWavSamples(audioFile)
             if (samples.isEmpty()) {
-                Log.w(TAG, "No audio samples read from ${audioFile.name}")
-                return@withContext null
+                val err = "Nessun campione audio letto dal file WAV ${audioFile.name}"
+                Log.w(TAG, err)
+                return@withContext SttExecutionResult(null, 0f, 0L, err)
             }
+
+            val audioDurationSec = samples.size / 16000f
 
             // Ottimizzazione Short-circuit: audio troppo breve (< 0.5s a 16kHz = 8000 campioni)
             if (samples.size < 8000) {
@@ -109,8 +117,21 @@ class STTEngine(
                 val shortText = "Nota #${note.deviceNoteNum} (Clip audio troppo breve)"
                 val updated = note.copy(transcriptionText = shortText, transcriptionLanguage = "it")
                 noteDao.updateNote(updated)
-                return@withContext shortText
+                val durationMs = System.currentTimeMillis() - startTime
+                return@withContext SttExecutionResult(shortText, audioDurationSec, durationMs)
             }
+
+            onProgress?.invoke("Caricamento Whisper...", audioDurationSec, 0.1f)
+
+            val rec = getOrCreateRecognizer()
+            if (rec == null) {
+                val err = "Inizializzazione Whisper ONNX fallita (OfflineRecognizer null)"
+                Log.e(TAG, err)
+                return@withContext SttExecutionResult(null, audioDurationSec, System.currentTimeMillis() - startTime, err)
+            }
+
+            Log.d(TAG, "Transcribing WAV audio on-device for note #${note.deviceNoteNum} (${audioFile.name}, ${audioDurationSec}s)...")
+            onProgress?.invoke("Decodifica acustica PCM...", audioDurationSec, (System.currentTimeMillis() - startTime) / 1000f)
 
             val stream = rec.createStream()
             stream.acceptWaveform(samples, 16000)
@@ -119,7 +140,9 @@ class STTEngine(
             stream.release()
 
             val text = result.text.trim()
-            Log.d(TAG, "On-device transcription completed: '$text'")
+            val durationMs = System.currentTimeMillis() - startTime
+            val rtf = if (durationMs > 0 && audioDurationSec > 0) (durationMs / 1000f) / audioDurationSec else 0f
+            Log.d(TAG, "On-device transcription completed: '$text' in ${durationMs}ms (RTF: ${rtf}x)")
 
             val finalText = text.ifBlank { "Nota #${note.deviceNoteNum} (${note.tag})" }
             val updated = note.copy(
@@ -127,12 +150,16 @@ class STTEngine(
                 transcriptionLanguage = "it"
             )
             noteDao.updateNote(updated)
-            return@withContext finalText
+            return@withContext SttExecutionResult(finalText, audioDurationSec, durationMs)
         } catch (t: Throwable) {
-            Log.e(TAG, "Fatal error during on-device transcription for note $noteId", t)
-            return@withContext null
+            val durationMs = System.currentTimeMillis() - startTime
+            val err = "${t.javaClass.simpleName}: ${t.localizedMessage ?: t.message}"
+            Log.e(TAG, "Fatal error during on-device transcription for note $noteId: $err", t)
+            return@withContext SttExecutionResult(null, 0f, durationMs, err)
         }
     }
+
+    suspend fun transcribeNote(noteId: String): String? = transcribeNoteWithMetrics(noteId).text
 
     private fun readWavSamples(file: File): FloatArray {
         try {

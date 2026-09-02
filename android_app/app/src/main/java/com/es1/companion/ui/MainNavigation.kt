@@ -84,6 +84,8 @@ fun MainNavigation(
     val currentProcessingJob by viewModel.currentProcessingJob.collectAsState()
     val processingQueue by viewModel.processingQueue.collectAsState()
     val processingPhaseSummary by viewModel.processingPhaseSummary.collectAsState()
+    val liveProgress by viewModel.liveProgress.collectAsState()
+    val processingHistory by viewModel.processingHistory.collectAsState()
     val showQueueSheet by viewModel.showQueueSheet.collectAsState()
 
     var showTagRulesScreen by remember { mutableStateOf(false) }
@@ -139,6 +141,7 @@ fun MainNavigation(
                     currentJob = currentProcessingJob,
                     totalInQueue = processingQueue.size,
                     phaseSummary = processingPhaseSummary,
+                    liveProgress = liveProgress,
                     onClick = { viewModel.openQueueSheet() },
                     onCancelCurrent = { currentProcessingJob?.id?.let { viewModel.cancelProcessingJob(it) } }
                 )
@@ -286,8 +289,12 @@ fun MainNavigation(
                 currentJob = currentProcessingJob,
                 pendingJobs = processingQueue,
                 phaseSummary = processingPhaseSummary,
+                liveProgress = liveProgress,
+                history = processingHistory,
                 onCancelJob = { viewModel.cancelProcessingJob(it) },
                 onCancelAll = { viewModel.cancelAllProcessingJobs() },
+                onClearHistory = { viewModel.clearProcessingHistory() },
+                onRetryJob = { viewModel.retryJobFromHistory(it) },
                 onDismiss = { viewModel.closeQueueSheet() }
             )
         }
