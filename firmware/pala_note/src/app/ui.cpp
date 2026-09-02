@@ -9,6 +9,7 @@
 #include "provisioning.h"
 #include "rtc.h"
 #include "md_reader.h"
+#include "reader.h"
 #include "../../logo_bitmap.h"
 #include "../../ready_bitmap.h"
 #include "../../recording_bitmap.h"
@@ -371,15 +372,15 @@ void showTagSelect(int cursor) {
 
 void showMenu(int cursor) {
   clearWhite();
-  drawStr(16, 12, "menu", 1, BLACK);
-  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
-  hline(16, 26, W-32, BLACK);
-  const int y0 = 34, step = 28, itemH = 24;
+  drawStr(16, 11, "menu", 1, BLACK);
+  drawBatteryMicroBadge(154, 11, readBatteryPercent(), BLACK);
+  hline(16, 24, W-32, BLACK);
+  const int y0 = 30, step = 26, itemH = 22;
   for (int row = 0; row < MENU_COUNT; row++) {
-    bool active = row == cursor;
+    bool active = (row == cursor);
     int y = y0 + row * step;
-    if (active) fillRoundRect(16, y, 168, itemH, 5, BLACK);
-    else        strokeRoundRect(16, y, 168, itemH, 5, 1, BLACK);
+    if (active) fillRoundRect(16, y, 168, itemH, 4, BLACK);
+    else        strokeRoundRect(16, y, 168, itemH, 4, 1, BLACK);
     uint8_t col = active ? WHITE : BLACK;
     drawStrInBox(16, y, 168, itemH, MENU_ITEMS[row], 1, col);
   }
@@ -525,6 +526,116 @@ void showNoteList(int cursor) {
   }
 
   drawFooterNav("next", "select", "menu");
+  refresh();
+}
+
+void showReaderList(int cursor) {
+  clearWhite();
+  int total = articleCount();
+
+  drawStr(16, 11, "reader", 1, BLACK);
+  drawBatteryMicroBadge(154, 11, readBatteryPercent(), BLACK);
+
+  char countStr[16];
+  if (total > 0) {
+    snprintf(countStr, sizeof(countStr), "%d/%d", cursor + 1, total);
+  } else {
+    snprintf(countStr, sizeof(countStr), "0/0");
+  }
+  int cw = textW(countStr, 1);
+  drawStr(146 - cw, 11, countStr, 1, BLACK);
+
+  hline(16, 24, W - 32, BLACK);
+
+  if (total == 0) {
+    iconThinking(100, 75);
+    drawStrC(100, 110, "No articles", 1, BLACK);
+    drawStrC(100, 126, "Push articles from", 1, BLACK);
+    drawStrC(100, 138, "the mobile app!", 1, BLACK);
+    drawFooterNav("back", "menu", "standby");
+    refresh();
+    return;
+  }
+
+  // Display 4 items per page window
+  int pageSize = 4;
+  int startIdx = (cursor / pageSize) * pageSize;
+  const int y0 = 30, step = 31, itemH = 27;
+
+  for (int i = 0; i < pageSize && (startIdx + i) < total; i++) {
+    int idx = startIdx + i;
+    bool active = (idx == cursor);
+    int y = y0 + i * step;
+    uint8_t col = active ? WHITE : BLACK;
+
+    if (active) {
+      fillRoundRect(16, y, 168, itemH, 5, BLACK);
+    } else {
+      strokeRoundRect(16, y, 168, itemH, 5, 1, BLACK);
+    }
+
+    // Source badge / prefix
+    String src = articleIndex[idx].source;
+    if (src.length() > 6) src = src.substring(0, 6);
+    char srcTag[12];
+    snprintf(srcTag, sizeof(srcTag), "[%s]", src.c_str());
+    drawStr(active ? 20 : 20, y + 5, srcTag, 1, col);
+
+    // Title (fitted)
+    int tagWidth = textW(srcTag, 1) + 4;
+    int maxTitleWidth = 168 - tagWidth - 28;
+    String cleanTitle = articleIndex[idx].title;
+    drawStrFit(20 + tagWidth, y + 5, maxTitleWidth, cleanTitle.c_str(), 1, col);
+
+    // Unread / Read indicator badge
+    if (!articleIndex[idx].isRead) {
+      drawStr(W - 36, y + 5, "new", 1, col);
+    } else {
+      drawStr(W - 36, y + 5, "ok", 1, col);
+    }
+  }
+
+  drawFooterNav("next", "read", "menu");
+  refresh();
+}
+
+void showReaderArticle(int cursor, int pageIndex) {
+  int total = articleCount();
+  if (cursor < 0 || cursor >= total) return;
+
+  int num = articleIndex[cursor].num;
+  String text = articleMarkdownContent(num);
+  if (text.length() == 0) {
+    text = "# " + String(articleIndex[cursor].title) + "\n\n_Empty article content._";
+  }
+
+  char header[64];
+  String src = articleIndex[cursor].source;
+  if (src.length() > 8) src = src.substring(0, 8);
+  snprintf(header, sizeof(header), "#%03d [%s]", num, src.c_str());
+
+  // Render markdown document
+  showMdDocument(header, text, pageIndex, false);
+
+  // Mark as read
+  if (!articleIndex[cursor].isRead) {
+    markArticleRead(num, true);
+  }
+}
+
+void showReaderDeleteConfirm(int articleNum, const char* title) {
+  clearWhite();
+  fillRect(0, 0, W, 26, BLACK);
+  drawStrC(W/2, 8, "DELETE ARTICLE", 1, WHITE);
+
+  char label[16];
+  snprintf(label, sizeof(label), "#%03d", articleNum);
+  drawStrC(W/2, 44, label, 2, BLACK);
+
+  drawStrFit(16, 75, W - 32, title, 1, BLACK);
+  drawStrC(W/2, 105, "Remove from Reader?", 1, BLACK);
+
+  drawFooterNav("cancel", "delete", "cancel");
   refresh();
 }
 

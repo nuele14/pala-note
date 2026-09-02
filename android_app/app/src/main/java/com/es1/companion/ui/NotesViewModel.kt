@@ -185,22 +185,15 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startSync() {
         viewModelScope.launch {
-            val syncResult = syncManager.performSync()
+            val syncResult = syncManager.performSync { deviceId ->
+                rssManager.pushAllQueuedArticles(deviceId = deviceId)
+            }
             if (syncResult.success) {
                 withContext(Dispatchers.IO) {
                     Log.d(TAG, "Running on-device post-sync pipeline...")
-                    // 1. Pipeline note vocali: STT -> LLM
+                    // Pipeline note vocali: STT -> LLM
                     sttEngine.processAllPending()
                     llmEngine.processAllPending()
-
-                    // 2. Trasferimento automatico articoli RSS in coda verso ED1
-                    val pushedCount = rssManager.pushAllQueuedArticles()
-                    if (pushedCount > 0) {
-                        Log.d(TAG, "Successfully transferred $pushedCount queued articles to ED1.")
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(getApplication(), "$pushedCount articoli RSS trasferiti su ED1!", Toast.LENGTH_SHORT).show()
-                        }
-                    }
                 }
             }
         }

@@ -7,6 +7,7 @@
 #include "battery.h"
 #include "rtc.h"
 #include "ui.h"
+#include "reader.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include "SD_MMC.h"
@@ -218,6 +219,31 @@ void handleApiArticlePush() {
     content = "# " + title;
   }
 
+  Serial.printf("[API Article] Received push: title='%s', tag='%s', contentLen=%d\n",
+                title.c_str(), tag.c_str(), (int)content.length());
+
+  // 1. Save into /articles directory for dedicated Reader section
+  if (!SD_MMC.exists(ARTICLES_DIR)) SD_MMC.mkdir(ARTICLES_DIR);
+  int artNum = nextArticleNumber();
+  char artPath[64];
+  snprintf(artPath, sizeof(artPath), "%s/art_%03d.md", ARTICLES_DIR, artNum);
+  File fArt = SD_MMC.open(artPath, FILE_WRITE);
+  if (fArt) {
+    fArt.print(content);
+    fArt.close();
+  }
+
+  char artMetaPath[64];
+  snprintf(artMetaPath, sizeof(artMetaPath), "%s/art_%03d.meta", ARTICLES_DIR, artNum);
+  File fMeta = SD_MMC.open(artMetaPath, FILE_WRITE);
+  if (fMeta) {
+    fMeta.printf("title=%s\nsource=%s\ndate=%s\n", title.c_str(), tag.c_str(), currentUtcIso().c_str());
+    fMeta.close();
+  }
+
+  addArticleToIndex(artNum, title.c_str(), tag.c_str(), currentUtcIso().c_str(), false);
+
+  // 2. Also keep in /notes for backward compatibility
   int num = nextNoteNumber();
   char mdPath[64];
   snprintf(mdPath, sizeof(mdPath), "%s/note_%03d.md", NOTES_DIR, num);
@@ -231,7 +257,7 @@ void handleApiArticlePush() {
   addToIndex(num, tag.c_str(), true);
   saveIndex();
 
-  String resp = "{\"status\":\"ok\",\"num\":" + String(num) + ",\"title\":\"" + title + "\"}";
+  String resp = "{\"status\":\"ok\",\"articleNum\":" + String(artNum) + ",\"noteNum\":" + String(num) + ",\"title\":\"" + title + "\"}";
   transferServer.sendHeader("Access-Control-Allow-Origin", "*");
   transferServer.send(200, "application/json", resp);
 }

@@ -43,12 +43,13 @@ extern "C" {
 #include "src/app/record.h"
 #include "src/app/led.h"
 #include "src/app/md_reader.h"
+#include "src/app/reader.h"
 
 // All pin, timing, path and threshold constants live in config.h.
 
 // ─── Content arrays ───────────────────────────────────────────────────────
 const char* DEFAULT_TAGS[]    = { "Note", "Work", "Idea", "Buy", "Private", "Todo" };
-const char* MENU_ITEMS[]     = { "Notes", "Shikamaru", "Sync", "Settings" };
+const char* MENU_ITEMS[]     = { "Notes", "Reader", "Shikamaru", "Sync", "Settings" };
 const char* SETTINGS_ITEMS[] = { "Sounds", "Clean Synced", "Wi-Fi", "Transfer", "Device" };
 
 // ─── Global variable definitions ─────────────────────────────────────────
@@ -56,9 +57,12 @@ board_power_bsp_t      board(EPD_PWR_PIN, Audio_PWR_PIN, VBAT_PWR_PIN);
 epaper_driver_display* display = nullptr;
 
 std::vector<NoteEntry> noteIndex;
+std::vector<ArticleEntry> articleIndex;
 
 AppState state          = STATE_IDLE;
 int      listCursor     = 0;
+int      readerCursor   = 0;
+int      readerArticlePage = 0;
 int      tagCursor      = 2;
 int      menuCursor     = 0;
 int      settingsCursor = 0;
@@ -218,11 +222,13 @@ void setup() {
     while (true) delay(1000);
   }
   if (!SD_MMC.exists(NOTES_DIR)) SD_MMC.mkdir(NOTES_DIR);
+  if (!SD_MMC.exists(ARTICLES_DIR)) SD_MMC.mkdir(ARTICLES_DIR);
   if (!SD_MMC.exists(SCREENSAVERS_DIR)) SD_MMC.mkdir(SCREENSAVERS_DIR);
   if (!SD_MMC.exists(SOUNDS_DIR)) SD_MMC.mkdir(SOUNDS_DIR);
 
   loadTags();
   loadIndex();
+  loadArticleIndex();
   #if ENABLE_BOOT_SPLASH
   if (!wakeToRecRequested) {
     showBootSplash();
@@ -269,6 +275,8 @@ void loop() {
       case STATE_IDLE:           showIdle();                     break;
       case STATE_MENU:           showMenu(menuCursor);           break;
       case STATE_NOTE_LIST:      showNoteList(listCursor);       break;
+      case STATE_READER_LIST:    showReaderList(readerCursor);   break;
+      case STATE_READER_ARTICLE: showReaderArticle(readerCursor, readerArticlePage); break;
       case STATE_NOTE_ACTIONS:   showNoteActions(listCursor, noteActionCursor); break;
       case STATE_NOTE_DETAIL:    showNoteDetail(listCursor);     break;
       case STATE_MD_READER:      showNoteMdReader(listCursor, mdReaderPage); break;
@@ -359,19 +367,28 @@ void loop() {
     } else if (rec == EV_SINGLE) {
       soundSelect();
       if (menuCursor == 0) {
+        // Notes
         activeFilter = -1; listCursor = 0;
         state = STATE_NOTE_LIST;
         showNoteList(listCursor);
       } else if (menuCursor == 1) {
+        // Reader
+        readerCursor = 0;
+        state = STATE_READER_LIST;
+        showReaderList(readerCursor);
+      } else if (menuCursor == 2) {
+        // Shikamaru
         shikamaruIsFocus = true;
         shikamaruSession = 1;
         shikamaruPaused = true;
         shikamaruRemainingSec = 25 * 60;
         state = STATE_SHIKAMARU;
         showShikamaru(shikamaruRemainingSec, true, 1, true);
-      } else if (menuCursor == 2) {
+      } else if (menuCursor == 3) {
+        // Sync
         startSyncFlow();
       } else {
+        // Settings
         settingsCursor = 0;
         state = STATE_SETTINGS;
         showSettings(settingsCursor);
@@ -575,6 +592,90 @@ void loop() {
       soundBack();
       state = STATE_MENU;
       showMenu(menuCursor);
+    }
+  }
+
+  // READER ARTICLE LIST ────────────────────────────────────────────────
+  else if (state == STATE_READER_LIST) {
+    ButtonEvent rec = readButtonEvent(BTN_REC);
+    ButtonEvent pwr = readButtonEvent(BTN_PWR);
+    int count = articleCount();
+
+    if (count <= 0) {
+      if (pwr != EV_NONE || rec != EV_NONE) {
+        soundBack();
+        state = STATE_MENU;
+        showMenu(menuCursor);
+      }
+      return;
+    }
+
+    if (pwr == EV_SINGLE) {
+      soundNext();
+      readerCursor = (readerCursor + 1) % count;
+      showReaderList(readerCursor);
+    } else if (rec == EV_SINGLE) {
+      soundSelect();
+      readerArticlePage = 0;
+      state = STATE_READER_ARTICLE;
+      showReaderArticle(readerCursor, readerArticlePage);
+    } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
+      soundBack();
+      state = STATE_MENU;
+      showMenu(menuCursor);
+    }
+  }
+
+  // READER ARTICLE VIEW ────────────────────────────────────────────────
+  else if (state == STATE_READER_ARTICLE) {
+    ButtonEvent rec = readButtonEvent(BTN_REC);
+    ButtonEvent pwr = readButtonEvent(BTN_PWR);
+    int count = articleCount();
+
+    if (readerCursor >= 0 && readerCursor < count) {
+      String text = articleMarkdownContent(articleIndex[readerCursor].num);
+      int totalPages = mdCalculateTotalPages(text);
+
+      if (pwr == EV_SINGLE) {
+        // Pagina successiva
+        soundNext();
+        readerArticlePage = (readerArticlePage + 1) % totalPages;
+        showReaderArticle(readerCursor, readerArticlePage);
+      } else if (rec == EV_SINGLE) {
+        // Pagina precedente
+        soundNext();
+        if (readerArticlePage > 0) readerArticlePage--;
+        else readerArticlePage = max(0, totalPages - 1);
+        showReaderArticle(readerCursor, readerArticlePage);
+      } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
+        // Torna alla lista articoli
+        soundBack();
+        state = STATE_READER_LIST;
+        showReaderList(readerCursor);
+      }
+    } else {
+      state = STATE_READER_LIST;
+      showReaderList(readerCursor);
+    }
+  }
+
+  // READER DELETE CONFIRM ───────────────────────────────────────────────
+  else if (state == STATE_READER_DELETE_CONFIRM) {
+    ButtonEvent rec = readButtonEvent(BTN_REC);
+    ButtonEvent pwr = readButtonEvent(BTN_PWR);
+
+    if (rec == EV_SINGLE) {
+      if (readerCursor >= 0 && readerCursor < articleCount()) {
+        deleteArticle(articleIndex[readerCursor].num);
+        soundDelete();
+      }
+      readerCursor = constrain(readerCursor, 0, max(articleCount() - 1, 0));
+      state = STATE_READER_LIST;
+      showReaderList(readerCursor);
+    } else if (pwr == EV_SINGLE || rec == EV_LONG || pwr == EV_LONG) {
+      soundBack();
+      state = STATE_READER_LIST;
+      showReaderList(readerCursor);
     }
   }
 

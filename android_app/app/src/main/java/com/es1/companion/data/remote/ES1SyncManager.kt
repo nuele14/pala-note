@@ -27,7 +27,7 @@ sealed class SyncState {
     data class Connecting(val message: String = "Connessione a ES1 (192.168.4.1)...") : SyncState()
     data class Downloading(val current: Int, val total: Int, val noteNum: Int) : SyncState()
     data class Processing(val message: String) : SyncState()
-    data class Success(val downloadedCount: Int) : SyncState()
+    data class Success(val downloadedCount: Int, val uploadedArticlesCount: Int = 0) : SyncState()
     data class Error(val message: String) : SyncState()
 }
 
@@ -60,7 +60,9 @@ class ES1SyncManager(private val context: Context) {
 
     fun getApiService(): ES1ApiService = apiService
 
-    suspend fun performSync(): SyncResult = withContext(Dispatchers.IO) {
+    suspend fun performSync(
+        onSyncArticles: (suspend (deviceId: String) -> Int)? = null
+    ): SyncResult = withContext(Dispatchers.IO) {
         _syncState.value = SyncState.Connecting()
         try {
             // 1. Info & handshake
@@ -72,7 +74,8 @@ class ES1SyncManager(private val context: Context) {
                 return@withContext SyncResult(false, 0, errorMsg)
             }
             val deviceInfo = infoResponse.body()!!
-            Log.d(TAG, "Connected to ${deviceInfo.deviceId} (v${deviceInfo.firmwareVersion}, ${deviceInfo.batteryPct}% bat)")
+            val deviceId = deviceInfo.deviceId
+            Log.d(TAG, "Connected to $deviceId (v${deviceInfo.firmwareVersion}, ${deviceInfo.batteryPct}% bat)")
 
             // 2. Fetch list of notes
             val notesResponse = apiService.getDeviceNotes()
@@ -82,7 +85,6 @@ class ES1SyncManager(private val context: Context) {
                 return@withContext SyncResult(false, 0, errorMsg)
             }
             val deviceNotes = notesResponse.body()!!.notes
-            val deviceId = deviceInfo.deviceId
 
             // 3. Differential sync: find unsynced notes
             val toDownload = mutableListOf<DeviceNoteItem>()
@@ -93,75 +95,93 @@ class ES1SyncManager(private val context: Context) {
                 }
             }
 
-            if (toDownload.isEmpty()) {
-                Log.d(TAG, "All ${deviceNotes.size} notes already synchronized locally.")
-                try {
-                    apiService.notifySyncDone()
-                } catch (_: Exception) {}
-                _syncState.value = SyncState.Success(0)
-                return@withContext SyncResult(true, 0, "Nessuna nuova nota da sincronizzare.")
-            }
-
-            // 4. Download audio files
-            val audioDir = File(context.filesDir, "audio").apply { mkdirs() }
-            val nowUtc = getUtcIsoNow()
             var downloadedCount = 0
 
-            for ((idx, dn) in toDownload.withIndex()) {
-                _syncState.value = SyncState.Downloading(idx + 1, toDownload.size, dn.num)
-                Log.d(TAG, "Downloading note #${dn.num} (${dn.durationSec}s, ${dn.tag})...")
+            // 4. Download audio files if any are pending
+            if (toDownload.isNotEmpty()) {
+                val audioDir = File(context.filesDir, "audio").apply { mkdirs() }
+                val nowUtc = getUtcIsoNow()
 
-                val audioResp = apiService.downloadAudio(dn.num)
-                if (audioResp.isSuccessful && audioResp.body() != null) {
-                    val targetFile = File(audioDir, "${deviceId}_note_${String.format(Locale.US, "%03d", dn.num)}.wav")
-                    val body = audioResp.body()!!
+                for ((idx, dn) in toDownload.withIndex()) {
+                    _syncState.value = SyncState.Downloading(idx + 1, toDownload.size, dn.num)
+                    Log.d(TAG, "Downloading note #${dn.num} (${dn.durationSec}s, ${dn.tag})...")
 
-                    // Write to local file and compute SHA256
-                    val sha256Digest = MessageDigest.getInstance("SHA-256")
-                    body.byteStream().use { input ->
-                        FileOutputStream(targetFile).use { output ->
-                            val buffer = ByteArray(8192)
-                            var read: Int
-                            while (input.read(buffer).also { read = it } != -1) {
-                                output.write(buffer, 0, read)
-                                sha256Digest.update(buffer, 0, read)
+                    val audioResp = apiService.downloadAudio(dn.num)
+                    if (audioResp.isSuccessful && audioResp.body() != null) {
+                        val targetFile = File(audioDir, "${deviceId}_note_${String.format(Locale.US, "%03d", dn.num)}.wav")
+                        val body = audioResp.body()!!
+
+                        // Write to local file and compute SHA256
+                        val sha256Digest = MessageDigest.getInstance("SHA-256")
+                        body.byteStream().use { input ->
+                            FileOutputStream(targetFile).use { output ->
+                                val buffer = ByteArray(8192)
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    output.write(buffer, 0, read)
+                                    sha256Digest.update(buffer, 0, read)
+                                }
                             }
                         }
-                    }
-                    val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
+                        val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
 
-                    // Save entity in Room DB
-                    val noteEntity = NoteEntity(
-                        deviceNoteNum = dn.num,
-                        deviceId = deviceId,
-                        createdUtc = nowUtc,
-                        tag = dn.tag,
-                        durationSec = dn.durationSec,
-                        audioFileSize = targetFile.length(),
-                        audioLocalPath = targetFile.absolutePath,
-                        audioSha256 = sha256Hex,
-                        isSyncedWithDevice = true
-                    )
-                    noteDao.insertNote(noteEntity)
-                    downloadedCount++
+                        // Save entity in Room DB
+                        val noteEntity = NoteEntity(
+                            deviceNoteNum = dn.num,
+                            deviceId = deviceId,
+                            createdUtc = nowUtc,
+                            tag = dn.tag,
+                            durationSec = dn.durationSec,
+                            audioFileSize = targetFile.length(),
+                            audioLocalPath = targetFile.absolutePath,
+                            audioSha256 = sha256Hex,
+                            isSyncedWithDevice = true
+                        )
+                        noteDao.insertNote(noteEntity)
+                        downloadedCount++
 
-                    // Send ACK to device
-                    try {
-                        apiService.sendAck(dn.num)
-                        Log.d(TAG, "ACK sent for note #${dn.num}")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "ACK failed for #${dn.num}: ${e.message}")
+                        // Send ACK to device
+                        try {
+                            apiService.sendAck(dn.num)
+                            Log.d(TAG, "ACK sent for note #${dn.num}")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "ACK failed for #${dn.num}: ${e.message}")
+                        }
                     }
+                }
+            } else {
+                Log.d(TAG, "All ${deviceNotes.size} notes already synchronized locally.")
+            }
+
+            // 5. Trasferimento articoli in coda verso ES1 Reader (mentre il Wi-Fi è ATTIVO!)
+            var uploadedArticlesCount = 0
+            if (onSyncArticles != null) {
+                _syncState.value = SyncState.Processing("Trasferimento articoli al Reader di ES1...")
+                Log.d(TAG, "Pushing queued articles to $deviceId...")
+                try {
+                    uploadedArticlesCount = onSyncArticles(deviceId)
+                    Log.d(TAG, "Successfully pushed $uploadedArticlesCount articles to $deviceId.")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error pushing articles during sync: ${e.message}", e)
                 }
             }
 
-            // 5. Notify ESP32 sync done (allows sleep)
+            // 6. Notify ESP32 sync done (allows sleep) SOLO DOPO che sia le note che gli articoli sono stati trasferiti!
             try {
                 apiService.notifySyncDone()
-            } catch (_: Exception) {}
+                Log.d(TAG, "notifySyncDone() sent to $deviceId")
+            } catch (e: Exception) {
+                Log.w(TAG, "notifySyncDone() failed: ${e.message}")
+            }
 
-            _syncState.value = SyncState.Success(downloadedCount)
-            return@withContext SyncResult(true, downloadedCount, "Sincronizzate $downloadedCount note con successo!")
+            _syncState.value = SyncState.Success(downloadedCount, uploadedArticlesCount)
+
+            val successMsg = buildString {
+                if (downloadedCount > 0) append("Sincronizzate $downloadedCount note! ")
+                if (uploadedArticlesCount > 0) append("$uploadedArticlesCount articoli inviati al Reader!")
+                if (isEmpty()) append("Dispositivo e Reader già aggiornati.")
+            }
+            return@withContext SyncResult(true, downloadedCount, successMsg)
 
         } catch (e: Exception) {
             Log.e(TAG, "Sync error", e)

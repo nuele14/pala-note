@@ -9,6 +9,7 @@ import com.es1.companion.data.local.RssFeedEntity
 import com.es1.companion.data.local.generateDeterministicArticleId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -170,19 +171,23 @@ class RssManager(
                 appendLine(article.markdownContent.ifBlank { article.rawSummary })
             }
 
-            val payload = JSONObject().apply {
-                put("title", article.title)
-                put("tag", "News")
-                put("content", markdownDocument)
-            }
-
-            val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url(url)
-                .post(body)
+            val formBody = FormBody.Builder()
+                .add("title", article.title)
+                .add("tag", article.feedTitle.take(31))
+                .add("content", markdownDocument)
                 .build()
 
+            val request = Request.Builder()
+                .url(url)
+                .post(formBody)
+                .build()
+
+            Log.d(TAG, "Pushing article '${article.title}' (${markdownDocument.length} chars) to $url...")
             val response = httpClient.newCall(request).execute()
+            val respCode = response.code
+            val respStr = response.body?.string() ?: ""
+            Log.d(TAG, "Device push response ($respCode): $respStr")
+
             if (response.isSuccessful) {
                 Log.d(TAG, "Article '${article.title}' pushed to $deviceId successfully.")
                 rssDao.markArticleSyncedAndDequeue(
@@ -193,11 +198,11 @@ class RssManager(
                 )
                 return@withContext true
             } else {
-                Log.w(TAG, "Device $deviceId push returned HTTP ${response.code}")
+                Log.w(TAG, "Device $deviceId push returned HTTP $respCode: $respStr")
                 return@withContext false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to push article to device at $deviceIp: ${e.message}")
+            Log.e(TAG, "Failed to push article '${article.title}' to device at $deviceIp: ${e.message}", e)
             return@withContext false
         }
     }
@@ -211,11 +216,13 @@ class RssManager(
         deviceIp: String = "192.168.4.1"
     ): Int = withContext(Dispatchers.IO) {
         val queued = rssDao.getQueuedArticlesList()
+        Log.d(TAG, "Found ${queued.size} queued articles to push to $deviceId at $deviceIp")
         var pushedCount = 0
         for (art in queued) {
             val ok = pushArticleToDevice(art, deviceId, deviceName, deviceIp)
             if (ok) pushedCount++
         }
+        Log.d(TAG, "Finished pushing queued articles: $pushedCount of ${queued.size} succeeded.")
         return@withContext pushedCount
     }
 

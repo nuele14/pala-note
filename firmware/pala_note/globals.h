@@ -6,9 +6,12 @@
 #include "src/display/epaper_driver_bsp.h"
 
 extern std::vector<NoteEntry> noteIndex;
+extern std::vector<ArticleEntry> articleIndex;
 
 extern AppState  state;
 extern int       listCursor;
+extern int       readerCursor;
+extern int       readerArticlePage;
 extern int       tagCursor;
 extern int       menuCursor;
 extern int       settingsCursor;

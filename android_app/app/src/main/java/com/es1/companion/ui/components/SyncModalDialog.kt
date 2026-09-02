@@ -107,10 +107,17 @@ fun SyncModalDialog(
                                 modifier = Modifier.size(28.dp)
                             )
                             Text(
-                                text = if (syncState.downloadedCount > 0)
-                                    "✓ Sincronizzate ${syncState.downloadedCount} note!"
-                                else
-                                    "✓ Tutte le note sono già sincronizzate.",
+                                text = buildString {
+                                    if (syncState.downloadedCount > 0) {
+                                        append("✓ Sincronizzate ${syncState.downloadedCount} note!\n")
+                                    }
+                                    if (syncState.uploadedArticlesCount > 0) {
+                                        append("✓ ${syncState.uploadedArticlesCount} articoli inviati al Reader!")
+                                    }
+                                    if (isEmpty()) {
+                                        append("✓ Note e Reader già aggiornati.")
+                                    }
+                                },
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
