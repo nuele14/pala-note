@@ -79,6 +79,77 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putString("theme_mode", mode.name).apply()
     }
 
+    // On-Device Local LLM Models (Qwen 3 1.7B, Gemma 3 4B, Gemma 3 1B)
+    val supportedLlmModels = com.es1.companion.domain.llm.LlmModelManager.SUPPORTED_MODELS
+    val activeLlmModelId: StateFlow<String> = llmEngine.modelManager.activeModelId
+    val downloadedLlmModelIds: StateFlow<Set<String>> = llmEngine.modelManager.downloadedModelIds
+    val llmDownloadState: StateFlow<com.es1.companion.domain.stt.ModelDownloadState> = llmEngine.modelManager.downloadState
+
+    fun setActiveLlmModel(modelId: String) {
+        llmEngine.modelManager.setActiveModel(modelId)
+    }
+
+    fun downloadLlmModel(modelId: String) {
+        viewModelScope.launch {
+            val ok = llmEngine.modelManager.downloadModel(modelId)
+            withContext(Dispatchers.Main) {
+                val modelName = supportedLlmModels.find { it.id == modelId }?.name ?: modelId
+                if (ok) {
+                    Toast.makeText(getApplication(), "Modello on-device $modelName pronto!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Errore download $modelName", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun deleteLlmModel(modelId: String) {
+        val ok = llmEngine.modelManager.deleteModel(modelId)
+        val modelName = supportedLlmModels.find { it.id == modelId }?.name ?: modelId
+        if (ok) {
+            Toast.makeText(getApplication(), "Modello $modelName eliminato dal dispositivo", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Processing Queue Manager (STT -> LLM Batch con standby 30s)
+    val queueManager = com.es1.companion.domain.queue.ProcessingQueueManager(
+        sttEngine = sttEngine,
+        llmEngine = llmEngine,
+        noteDao = noteDao,
+        scope = viewModelScope
+    )
+
+    val currentProcessingJob: StateFlow<com.es1.companion.domain.queue.ProcessingJob?> = queueManager.currentJob
+    val processingQueue: StateFlow<List<com.es1.companion.domain.queue.ProcessingJob>> = queueManager.allJobs
+    val isProcessing: StateFlow<Boolean> = queueManager.isProcessing
+    val processingPhaseSummary: StateFlow<String?> = queueManager.phaseSummary
+
+    private val _showQueueSheet = MutableStateFlow(false)
+    val showQueueSheet: StateFlow<Boolean> = _showQueueSheet.asStateFlow()
+
+    fun openQueueSheet() { _showQueueSheet.value = true }
+    fun closeQueueSheet() { _showQueueSheet.value = false }
+    fun cancelProcessingJob(jobId: String) = queueManager.cancelJob(jobId)
+    fun cancelAllProcessingJobs() = queueManager.cancelAllJobs()
+
+    init {
+        viewModelScope.launch {
+            noteDao.getAllNotes().collect { list ->
+                val current = _selectedNote.value ?: return@collect
+                val updated = list.find { it.id == current.id }
+                if (updated != null && (updated.transcriptionText != current.transcriptionText || updated.elaboratedMarkdown != current.elaboratedMarkdown || updated.tag != current.tag)) {
+                    _selectedNote.value = updated
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = noteDao.getTagRule("Note")
+            if (existing == null) {
+                AppDatabase.populateDefaultTagRules(noteDao)
+            }
+        }
+    }
+
     // Tag filter & search states
     private val _selectedTag = MutableStateFlow("All")
     val selectedTag: StateFlow<String> = _selectedTag.asStateFlow()
@@ -167,21 +238,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Gemma LLM Model State
-    val gemmaDownloadState = llmEngine.modelManager.downloadState
 
-    fun downloadGemmaModel() {
-        viewModelScope.launch {
-            val ok = llmEngine.modelManager.downloadModel()
-            withContext(Dispatchers.Main) {
-                if (ok) {
-                    Toast.makeText(getApplication(), "Modello Gemma 2B On-Device pronto!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(getApplication(), "Errore nel download del modello Gemma", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
 
     fun startSync() {
         viewModelScope.launch {
@@ -190,10 +247,13 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (syncResult.success) {
                 withContext(Dispatchers.IO) {
-                    Log.d(TAG, "Running on-device post-sync pipeline...")
-                    // Pipeline note vocali: STT -> LLM
-                    sttEngine.processAllPending()
-                    llmEngine.processAllPending()
+                    Log.d(TAG, "Accodamento note sincronizzate nella coda di elaborazione batch...")
+                    val pendingTranscriptions = noteDao.getPendingTranscriptions()
+                    val pendingElaborations = noteDao.getPendingElaborations()
+                    val allPending = (pendingTranscriptions + pendingElaborations).distinctBy { it.id }
+                    if (allPending.isNotEmpty()) {
+                        queueManager.enqueueBatch(allPending)
+                    }
                 }
             }
         }
@@ -211,52 +271,15 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun reElaborateNote(note: NoteEntity) {
-        viewModelScope.launch {
-            try {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Avvio rielaborazione nota #${note.deviceNoteNum}...", Toast.LENGTH_SHORT).show()
-                }
-
-                val isModelReady = sttEngine.modelManager.isModelReady()
-                if (!isModelReady) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Modello Whisper non scaricato. Scaricalo dalla tab Impostazioni (connesso a Internet)!", Toast.LENGTH_LONG).show()
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Trascrizione Whisper on-device in corso...", Toast.LENGTH_SHORT).show()
-                    }
-                    withContext(Dispatchers.IO) {
-                        sttEngine.transcribeNote(note.id)
-                    }
-                }
-
-                // Elaborazione intelligente (LLM / Regole Tag)
-                withContext(Dispatchers.IO) {
-                    llmEngine.elaborateNote(note.id)
-                }
-
-                // Ricarica la nota aggiornata nel bottom sheet
-                val freshNote = withContext(Dispatchers.IO) {
-                    noteDao.getNoteByIdDirect(note.id) ?: noteDao.getNoteByDeviceNum(note.deviceNoteNum, note.deviceId)
-                }
-                _selectedNote.value = freshNote
-
-                withContext(Dispatchers.Main) {
-                    if (freshNote?.transcriptionText != null && freshNote.elaboratedMarkdown != null) {
-                        Toast.makeText(getApplication(), "Nota #${note.deviceNoteNum} rielaborata con successo!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(getApplication(), "Rielaborazione completata.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (t: Throwable) {
-                Log.e(TAG, "Error during reElaborateNote", t)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Errore rielaborazione: ${t.localizedMessage ?: t.message}", Toast.LENGTH_LONG).show()
-                }
-            }
+    fun resetDefaultTagRules() {
+        viewModelScope.launch(Dispatchers.IO) {
+            AppDatabase.populateDefaultTagRules(noteDao)
         }
+    }
+
+    fun reElaborateNote(note: NoteEntity) {
+        queueManager.enqueueNote(note)
+        Toast.makeText(getApplication(), "Nota #${note.deviceNoteNum} aggiunta alla coda", Toast.LENGTH_SHORT).show()
     }
 
     fun exportMarkdown(note: NoteEntity) {

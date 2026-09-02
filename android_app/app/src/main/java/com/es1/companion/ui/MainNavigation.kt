@@ -1,6 +1,7 @@
 package com.es1.companion.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +38,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.es1.companion.ui.components.NoteDetailBottomSheet
 import com.es1.companion.ui.components.SyncModalDialog
+import com.es1.companion.ui.components.ProcessingBanner
+import com.es1.companion.ui.components.ProcessingQueueBottomSheet
+import com.es1.companion.ui.screens.TagRulesScreen
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material.icons.rounded.Article
 import com.es1.companion.ui.screens.ArticlesScreen
 import com.es1.companion.ui.screens.FeedScreen
@@ -70,7 +76,27 @@ fun MainNavigation(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val modelDownloadState by viewModel.modelDownloadState.collectAsState()
-    val gemmaDownloadState by viewModel.gemmaDownloadState.collectAsState()
+    val supportedLlmModels = viewModel.supportedLlmModels
+    val activeLlmModelId by viewModel.activeLlmModelId.collectAsState()
+    val downloadedLlmModelIds by viewModel.downloadedLlmModelIds.collectAsState()
+    val llmDownloadState by viewModel.llmDownloadState.collectAsState()
+
+    val currentProcessingJob by viewModel.currentProcessingJob.collectAsState()
+    val processingQueue by viewModel.processingQueue.collectAsState()
+    val processingPhaseSummary by viewModel.processingPhaseSummary.collectAsState()
+    val showQueueSheet by viewModel.showQueueSheet.collectAsState()
+
+    var showTagRulesScreen by remember { mutableStateOf(false) }
+
+    if (showTagRulesScreen) {
+        TagRulesScreen(
+            tagRules = tagRules,
+            onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
+            onResetDefaults = { viewModel.resetDefaultTagRules() },
+            onBackClick = { showTagRulesScreen = false }
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -108,9 +134,18 @@ fun MainNavigation(
             )
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
+            Column {
+                ProcessingBanner(
+                    currentJob = currentProcessingJob,
+                    totalInQueue = processingQueue.size,
+                    phaseSummary = processingPhaseSummary,
+                    onClick = { viewModel.openQueueSheet() },
+                    onCancelCurrent = { currentProcessingJob?.id?.let { viewModel.cancelProcessingJob(it) } }
+                )
+
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
                 NavigationBarItem(
                     selected = (selectedTab == 0),
                     onClick = { selectedTab = 0 },
@@ -151,6 +186,7 @@ fun MainNavigation(
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 )
+            }
             }
         },
         floatingActionButton = {
@@ -207,13 +243,18 @@ fun MainNavigation(
                 3 -> SettingsScreen(
                     themeMode = themeMode,
                     onThemeModeChange = { viewModel.setThemeMode(it) },
-                    tagRules = tagRules,
-                    onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
+                    tagRulesCount = tagRules.size,
+                    onOpenTagRules = { showTagRulesScreen = true },
+                    supportedLlmModels = supportedLlmModels,
+                    activeLlmModelId = activeLlmModelId,
+                    downloadedLlmModelIds = downloadedLlmModelIds,
+                    llmDownloadState = llmDownloadState,
+                    onSetActiveLlmModel = { viewModel.setActiveLlmModel(it) },
+                    onDownloadLlmModel = { viewModel.downloadLlmModel(it) },
+                    onDeleteLlmModel = { viewModel.deleteLlmModel(it) },
                     onCleanDeviceMemory = { viewModel.cleanDeviceMemory() },
                     modelDownloadState = modelDownloadState,
-                    onDownloadModel = { viewModel.downloadWhisperModel() },
-                    gemmaDownloadState = gemmaDownloadState,
-                    onDownloadGemmaModel = { viewModel.downloadGemmaModel() }
+                    onDownloadModel = { viewModel.downloadWhisperModel() }
                 )
             }
         }
@@ -236,6 +277,18 @@ fun MainNavigation(
             SyncModalDialog(
                 syncState = syncState,
                 onDismiss = { viewModel.closeSyncDialog() }
+            )
+        }
+
+        // Processing Queue Modal BottomSheet
+        if (showQueueSheet) {
+            ProcessingQueueBottomSheet(
+                currentJob = currentProcessingJob,
+                pendingJobs = processingQueue,
+                phaseSummary = processingPhaseSummary,
+                onCancelJob = { viewModel.cancelProcessingJob(it) },
+                onCancelAll = { viewModel.cancelAllProcessingJobs() },
+                onDismiss = { viewModel.closeQueueSheet() }
             )
         }
     }

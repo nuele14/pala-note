@@ -53,6 +53,7 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 # On-Device Offline STT & LLM
 sherpa-onnx = { group = "com.bihe0832.android", name = "lib-sherpa-onnx", version = "8.6.6" }
 mediapipe-genai = { group = "com.google.mediapipe", name = "tasks-genai", version = "0.10.14" }
+litertlm = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version = "0.16.1" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

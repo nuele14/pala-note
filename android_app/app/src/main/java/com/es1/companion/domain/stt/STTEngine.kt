@@ -59,6 +59,15 @@ class STTEngine(
         }
     }
 
+    @Synchronized
+    fun unloadEngine() {
+        try {
+            recognizer?.release()
+        } catch (_: Throwable) {}
+        recognizer = null
+        Log.d(TAG, "Sherpa-ONNX Whisper recognizer unloaded from memory.")
+    }
+
     /**
      * Trascrive la nota localmente sul dispositivo con Whisper ONNX.
      */
@@ -86,16 +95,24 @@ class STTEngine(
             }
 
             Log.d(TAG, "Transcribing WAV audio on-device for note #${note.deviceNoteNum} (${audioFile.name})...")
-            val stream = rec.createStream()
 
             // Legge i campioni PCM 16kHz dal file WAV
             val samples = readWavSamples(audioFile)
             if (samples.isEmpty()) {
                 Log.w(TAG, "No audio samples read from ${audioFile.name}")
-                stream.release()
                 return@withContext null
             }
 
+            // Ottimizzazione Short-circuit: audio troppo breve (< 0.5s a 16kHz = 8000 campioni)
+            if (samples.size < 8000) {
+                Log.d(TAG, "Audio clip too short (< 0.5s), skipping Whisper inference.")
+                val shortText = "Nota #${note.deviceNoteNum} (Clip audio troppo breve)"
+                val updated = note.copy(transcriptionText = shortText, transcriptionLanguage = "it")
+                noteDao.updateNote(updated)
+                return@withContext shortText
+            }
+
+            val stream = rec.createStream()
             stream.acceptWaveform(samples, 16000)
             rec.decode(stream)
             val result = rec.getResult(stream)
