@@ -474,6 +474,19 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun ensureFullArticle(article: ArticleEntity): ArticleEntity {
+        return rssManager.ensureFullArticle(article)
+    }
+
+    fun preloadArticleContent(article: ArticleEntity, onResult: ((ArticleEntity) -> Unit)? = null) {
+        viewModelScope.launch {
+            val full = rssManager.ensureFullArticle(article)
+            withContext(Dispatchers.Main) {
+                onResult?.invoke(full)
+            }
+        }
+    }
+
     fun queueArticlesForSync(
         articleIds: List<String>,
         replaceExisting: Boolean = false,
@@ -492,6 +505,13 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     "${articleIds.size} articoli $mode nella lista per ED1!",
                     Toast.LENGTH_SHORT
                 ).show()
+            }
+            // Pre-carica in background i contenuti completi per ciascun articolo in coda
+            for (id in articleIds) {
+                val art = rssDao.getArticleById(id)
+                if (art != null && !art.isFullContent) {
+                    rssManager.ensureFullArticle(art)
+                }
             }
         }
     }

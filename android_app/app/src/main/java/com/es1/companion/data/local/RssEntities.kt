@@ -57,6 +57,8 @@ data class ArticleEntity(
     val pubDate: String? = null,
     val rawSummary: String = "",
     val markdownContent: String = "",
+    val fullHtmlContent: String? = null, // HTML completo e ripulito dell'articolo per visualizzazione reader mode
+    val isFullContent: Boolean = false, // true se il testo completo è stato estratto dal web oltre il feed RSS
     val isRead: Boolean = false,
     val queuedForSync: Boolean = false, // In attesa di trasferimento alla prossima sincronizzazione Wi-Fi
     val targetDeviceId: String = "ALL", // Dispositivo target per la coda (es. ALL, ES1_DEFAULT, KINDLE)

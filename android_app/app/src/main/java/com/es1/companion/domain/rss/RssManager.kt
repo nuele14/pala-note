@@ -49,6 +49,44 @@ class RssManager(
         .followSslRedirects(true)
         .build()
 
+    private val extractor = ArticleContentExtractor(httpClient)
+
+    /**
+     * Garantisce che l'articolo contenga il testo completo e l'HTML Reader Mode,
+     * scaricando ed estraendo la pagina web originale se il feed RSS forniva solo la preview.
+     */
+    suspend fun ensureFullArticle(article: ArticleEntity): ArticleEntity = withContext(Dispatchers.IO) {
+        if (article.isFullContent && !article.fullHtmlContent.isNullOrBlank() && article.markdownContent.length > 400) {
+            return@withContext article
+        }
+
+        try {
+            Log.d(TAG, "Assicurando contenuto completo per '${article.title}' da ${article.link}...")
+            val extracted = extractor.fetchAndExtract(
+                url = article.link,
+                fallbackTitle = article.title,
+                fallbackAuthor = article.author,
+                feedTitle = article.feedTitle,
+                pubDate = article.pubDate
+            )
+
+            if (extracted != null && extracted.markdown.isNotBlank()) {
+                val updated = article.copy(
+                    markdownContent = extracted.markdown,
+                    fullHtmlContent = extracted.fullHtml,
+                    author = if (article.author.isNullOrBlank()) extracted.author else article.author,
+                    isFullContent = true
+                )
+                rssDao.updateArticle(updated)
+                Log.d(TAG, "Articolo '${article.title}' arricchito con successo: ${extracted.textLength} caratteri.")
+                return@withContext updated
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Impossibile estrarre articolo completo da ${article.link}: ${e.message}")
+        }
+        return@withContext article
+    }
+
     /**
      * Scarica e analizza gli articoli di un singolo feed RSS.
      */
@@ -157,18 +195,21 @@ class RssManager(
         deviceName: String = "ES1 Note Reader",
         deviceIp: String = "192.168.4.1"
     ): Boolean = withContext(Dispatchers.IO) {
+        // Garantisce che il dispositivo riceva il testo completo e non solo la preview
+        val fullArticle = ensureFullArticle(article)
+
         try {
             val url = "http://$deviceIp/api/articles/push"
             val markdownDocument = buildString {
-                appendLine("# ${article.title}")
+                appendLine("# ${fullArticle.title}")
                 appendLine()
                 val metaLine = mutableListOf<String>()
-                metaLine.add("*${article.feedTitle}*")
-                if (!article.author.isNullOrBlank()) metaLine.add(article.author)
-                if (!article.pubDate.isNullOrBlank()) metaLine.add(article.pubDate)
+                metaLine.add("*${fullArticle.feedTitle}*")
+                if (!fullArticle.author.isNullOrBlank()) metaLine.add(fullArticle.author)
+                if (!fullArticle.pubDate.isNullOrBlank()) metaLine.add(fullArticle.pubDate)
                 appendLine(metaLine.joinToString(" • "))
                 appendLine()
-                appendLine(article.markdownContent.ifBlank { article.rawSummary })
+                appendLine(fullArticle.markdownContent.ifBlank { fullArticle.rawSummary })
             }
 
             val formBody = FormBody.Builder()

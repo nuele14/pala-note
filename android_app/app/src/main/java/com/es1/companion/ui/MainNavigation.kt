@@ -243,7 +243,8 @@ fun MainNavigation(
                     onEditFeed = { feed, title, url, category -> viewModel.updateRssFeed(feed, title, url, category) },
                     onDeleteFeed = { viewModel.deleteRssFeed(it) },
                     onTestFeedUrl = { viewModel.testFeedUrl(it) },
-                    onToggleRead = { viewModel.toggleArticleRead(it) }
+                    onToggleRead = { viewModel.toggleArticleRead(it) },
+                    onEnsureFullArticle = { viewModel.ensureFullArticle(it) }
                 )
                 2 -> SearchScreen(
                     query = searchQuery,

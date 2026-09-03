@@ -95,6 +95,9 @@ dependencies {
     // On-Device LiteRT-LM Inference (for RTLM models: Qwen, Gemma 3)
     implementation(libs.litertlm)
 
+    // Jsoup HTML Parser & Article Extractor
+    implementation(libs.jsoup)
+
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
 }
