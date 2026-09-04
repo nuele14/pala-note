@@ -58,6 +58,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import com.es1.companion.ui.theme.TechFontFamily
+import com.es1.companion.ui.theme.BodyFontFamily
+
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -74,6 +82,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -168,6 +177,7 @@ fun ArticlesScreen(
     onDeleteFeed: (RssFeedEntity) -> Unit,
     onTestFeedUrl: suspend (String) -> FeedValidationResult,
     onToggleRead: (ArticleEntity) -> Unit,
+    onEnsureFullArticle: (suspend (ArticleEntity) -> ArticleEntity)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedArticle by remember { mutableStateOf<ArticleEntity?>(null) }
@@ -592,6 +602,7 @@ fun ArticlesScreen(
             article = article,
             syncedDevices = syncedList,
             onToggleQueue = { onToggleArticleQueue(article) },
+            onEnsureFullArticle = onEnsureFullArticle,
             onDismiss = { selectedArticle = null }
         )
     }
@@ -984,15 +995,34 @@ fun ArticlePreviewBottomSheet(
     article: ArticleEntity,
     syncedDevices: List<ArticleDeviceSyncEntity>,
     onToggleQueue: () -> Unit,
+    onEnsureFullArticle: (suspend (ArticleEntity) -> ArticleEntity)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var selectedPreviewTab by remember { mutableIntStateOf(0) } // 0 = Web/HTML, 1 = Markdown E-Paper
+    var selectedPreviewTab by remember { mutableIntStateOf(0) } // 0 = Full HTML Reader, 1 = Markdown E-Paper, 2 = Live Web
+    var currentArticle by remember(article.id) { mutableStateOf(article) }
+    var isExtractingFull by remember(article.id) { mutableStateOf(false) }
+
+    // Auto-estrazione in background se l'articolo ha solo il sommario/preview
+    LaunchedEffect(article.id) {
+        if (!currentArticle.isFullContent || currentArticle.fullHtmlContent.isNullOrBlank() || currentArticle.markdownContent.length < 350) {
+            isExtractingFull = true
+            try {
+                if (onEnsureFullArticle != null) {
+                    val full = onEnsureFullArticle(currentArticle)
+                    currentArticle = full
+                }
+            } catch (_: Exception) {}
+            isExtractingFull = false
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp),
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
@@ -1001,7 +1031,7 @@ fun ArticlePreviewBottomSheet(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Header with title and quick browser open
+            // Header con titolo, metadati e azioni rapide
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1013,46 +1043,114 @@ fun ArticlePreviewBottomSheet(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = article.feedTitle,
+                            text = "[ ${currentArticle.feedTitle.uppercase()} ]",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
+                            fontFamily = TechFontFamily,
                             color = MaterialTheme.colorScheme.primary
                         )
+                        val statusLabel = if (currentArticle.isFullContent) "COMPLETO" else "PREVIEW RSS"
+                        val statusColor = if (currentArticle.isFullContent) MaterialTheme.colorScheme.primary else Color.Gray
+                        Box(
+                            modifier = Modifier
+                                .border(1.dp, statusColor, RoundedCornerShape(0.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = statusLabel,
+                                fontSize = 9.sp,
+                                fontFamily = TechFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                color = statusColor
+                            )
+                        }
+
                         if (syncedDevices.isNotEmpty()) {
                             Text(
                                 text = "✅ Su ${syncedDevices.joinToString { it.deviceName ?: it.deviceId }}",
                                 fontSize = 10.sp,
+                                fontFamily = TechFontFamily,
                                 color = Color(0xFF2E7D32),
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
                     Text(
-                        text = article.title,
+                        text = currentArticle.title,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        fontFamily = TechFontFamily,
+                        fontSize = 15.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                IconButton(
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(article.link))
-                            context.startActivity(intent)
-                        } catch (_: Exception) {}
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Pulsante per forzare la ri-estrazione del testo integrale
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                isExtractingFull = true
+                                try {
+                                    if (onEnsureFullArticle != null) {
+                                        val full = onEnsureFullArticle(currentArticle.copy(isFullContent = false, fullHtmlContent = null))
+                                        currentArticle = full
+                                    }
+                                } catch (_: Exception) {}
+                                isExtractingFull = false
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Ricarica articolo completo",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.OpenInNew,
-                        contentDescription = "Apri nel browser",
-                        tint = MaterialTheme.colorScheme.primary
+
+                    // Apri browser esterno
+                    IconButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentArticle.link))
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.OpenInNew,
+                            contentDescription = "Apri nel browser",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Indicatore di estrazione in tempo reale dal web
+            if (isExtractingFull) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    Text(
+                        text = "// ESTRAZIONE ARTICOLO INTEGRALE DAL WEB IN CORSO...",
+                        fontFamily = TechFontFamily,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
 
-            // Tab Selector: Web (HTML) vs E-Paper (Markdown)
+            // Tab Selector a 3 opzioni: HTML Reader Completo, E-Paper Markdown, Web Live
             SecondaryTabRow(
                 selectedTabIndex = selectedPreviewTab,
                 modifier = Modifier.fillMaxWidth()
@@ -1062,8 +1160,8 @@ fun ArticlePreviewBottomSheet(
                     onClick = { selectedPreviewTab = 0 },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Text("🌐 Anteprima Web (Scrematura)", fontSize = 12.sp)
+                            Icon(Icons.Rounded.Article, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Text("Articolo Completo", fontSize = 11.sp, fontFamily = TechFontFamily, fontWeight = FontWeight.Bold)
                         }
                     }
                 )
@@ -1072,83 +1170,170 @@ fun ArticlePreviewBottomSheet(
                     onClick = { selectedPreviewTab = 1 },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Rounded.Article, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Text("📄 Formato E-Paper", fontSize = 12.sp)
+                            Icon(Icons.Rounded.MenuBook, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Text("ES1 E-Paper", fontSize = 11.sp, fontFamily = TechFontFamily, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                )
+                Tab(
+                    selected = (selectedPreviewTab == 2),
+                    onClick = { selectedPreviewTab = 2 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Text("Web Originale", fontSize = 11.sp, fontFamily = TechFontFamily, fontWeight = FontWeight.Bold)
                         }
                     }
                 )
             }
 
-            if (selectedPreviewTab == 0) {
-                // Live HTML Web View for quick scrematura
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(380.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.loadWithOverviewMode = true
-                                settings.useWideViewPort = true
-                                webViewClient = WebViewClient()
-                                loadUrl(article.link)
+            // Contenuto dei Tab
+            when (selectedPreviewTab) {
+                0 -> {
+                    // Tab 0: Reader Mode HTML pulito con il testo completo dell'articolo
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(420.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        val htmlToDisplay = currentArticle.fullHtmlContent
+                        if (!htmlToDisplay.isNullOrBlank()) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    WebView(ctx).apply {
+                                        settings.javaScriptEnabled = false
+                                        settings.domStorageEnabled = false
+                                        settings.loadWithOverviewMode = true
+                                        settings.useWideViewPort = true
+                                        webViewClient = WebViewClient()
+                                        loadDataWithBaseURL(currentArticle.link, htmlToDisplay, "text/html", "UTF-8", null)
+                                    }
+                                },
+                                update = { webView ->
+                                    webView.loadDataWithBaseURL(currentArticle.link, htmlToDisplay, "text/html", "UTF-8", null)
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else if (isExtractingFull) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    CircularProgressIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = "// CARICAMENTO TESTO COMPLETO...",
+                                        fontSize = 11.sp,
+                                        fontFamily = TechFontFamily,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
-                        },
-                        update = { webView ->
-                            if (webView.url != article.link) {
-                                webView.loadUrl(article.link)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                        } else {
+                            // Fallback con webview live se l'estrazione non ha prodotto html
+                            AndroidView(
+                                factory = { ctx ->
+                                    WebView(ctx).apply {
+                                        settings.javaScriptEnabled = true
+                                        settings.domStorageEnabled = true
+                                        settings.loadWithOverviewMode = true
+                                        settings.useWideViewPort = true
+                                        webViewClient = WebViewClient()
+                                        loadUrl(currentArticle.link)
+                                    }
+                                },
+                                update = { webView ->
+                                    if (webView.url != currentArticle.link) {
+                                        webView.loadUrl(currentArticle.link)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
                 }
-            } else {
-                // Formatted Markdown E-Paper view
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(380.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(12.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = article.markdownContent.ifBlank { article.rawSummary },
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                1 -> {
+                    // Tab 1: Formato Markdown E-Paper (il testo integrale inviato all'ES1)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(420.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(14.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "// TESTO INTEGRALE MARKDOWN (TRANSFER ES1)",
+                            fontSize = 11.sp,
+                            fontFamily = TechFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        Text(
+                            text = currentArticle.markdownContent.ifBlank { currentArticle.rawSummary },
+                            fontSize = 13.sp,
+                            fontFamily = BodyFontFamily,
+                            lineHeight = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                2 -> {
+                    // Tab 2: Web live della pagina originale
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(420.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        AndroidView(
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    settings.loadWithOverviewMode = true
+                                    settings.useWideViewPort = true
+                                    webViewClient = WebViewClient()
+                                    loadUrl(currentArticle.link)
+                                }
+                            },
+                            update = { webView ->
+                                if (webView.url != currentArticle.link) {
+                                    webView.loadUrl(currentArticle.link)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
 
-            // Bottom Queue Toggle Action Button
-            if (article.queuedForSync) {
+            // Bottom Action: Aggiungi/Rimuovi dalla coda per l'ES1
+            if (currentArticle.queuedForSync) {
                 OutlinedButton(
                     onClick = onToggleQueue,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE65100)),
+                    shape = RoundedCornerShape(0.dp),
+                    border = BorderStroke(1.dp, Color(0xFFEF5350)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF5350)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(imageVector = Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Rimuovi dalla Coda ED1", color = Color(0xFFE65100))
+                    Text("RIMUOVI DALLA CODA ED1", fontFamily = TechFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF5350))
                 }
             } else {
                 Button(
                     onClick = onToggleQueue,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(0.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(imageVector = Icons.Rounded.PlaylistAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Aggiungi alla Coda di Sincronizzazione ED1")
+                    Text("PREPARA PER TRASFERIMENTO ED1", fontFamily = TechFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
 

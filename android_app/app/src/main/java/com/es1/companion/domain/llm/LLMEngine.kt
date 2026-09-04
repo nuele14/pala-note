@@ -6,13 +6,26 @@ import com.es1.companion.data.local.NoteDao
 import com.es1.companion.data.local.NoteEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
-
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.ai.edge.litertlm.Engine as LiteRtEngine
+import com.google.ai.edge.litertlm.EngineConfig as LiteRtEngineConfig
+import com.google.ai.edge.litertlm.Content as LiteRtContent
+import com.google.ai.edge.litertlm.Message as LiteRtMessage
+import com.google.ai.edge.litertlm.MessageCallback as LiteRtMessageCallback
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+data class LlmExecutionResult(
+    val entity: NoteEntity?,
+    val modelName: String,
+    val tokensGenerated: Int,
+    val tokensPerSec: Float,
+    val durationMs: Long,
+    val error: String? = null,
+    val previewText: String? = null
+)
 
 data class VoiceTagResult(
     val tag: String,
@@ -25,34 +38,139 @@ class LLMEngine(
     val modelManager: LlmModelManager = LlmModelManager(context)
 ) {
     private val TAG = "LLMEngine"
+
+    // MediaPipe Tasks GenAI (per modelli .bin / .task con header TFL3)
     private var llmInference: LlmInference? = null
+    private var currentLoadedModelPath: String? = null
+
+    // LiteRT-LM Engine (per modelli .litertlm con container RTLM: Qwen, Gemma 3)
+    private var liteRtEngine: LiteRtEngine? = null
+    private var currentLiteRtModelPath: String? = null
+
+    private var lastInitError: String? = null
 
     @Synchronized
-    private fun getOrCreateLlm(): LlmInference? {
-        if (llmInference != null) return llmInference
-        if (!modelManager.isModelReady()) return null
+    fun unloadEngine() {
+        try {
+            liteRtEngine?.close()
+        } catch (_: Throwable) {}
+        liteRtEngine = null
+        currentLiteRtModelPath = null
 
-        return try {
-            Log.d(TAG, "Initializing on-device Gemma LlmInference...")
-            val options = LlmInference.LlmInferenceOptions.builder()
-                .setModelPath(modelManager.getModelPath())
-                .setMaxTokens(512)
-                .setTemperature(0.2f)
-                .build()
-            LlmInference.createFromOptions(context, options).also {
-                llmInference = it
-                Log.d(TAG, "Gemma LlmInference initialized successfully.")
-            }
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed to initialize MediaPipe Gemma: ${t.message}", t)
-            null
-        }
+        try {
+            llmInference?.close()
+        } catch (_: Throwable) {}
+        llmInference = null
+        currentLoadedModelPath = null
+
+        Log.d(TAG, "On-device LLM engines unloaded from memory (Standby).")
     }
 
-    suspend fun elaborateNote(noteId: String): NoteEntity? = withContext(Dispatchers.IO) {
+    private suspend fun generateWithLiteRt(
+        modelPath: String,
+        prompt: String,
+        onProgress: ((tokens: Int, tokSec: Float, elapsedSec: Float, snippet: String) -> Unit)? = null
+    ): Pair<String, Int> {
+        val startTime = System.currentTimeMillis()
+        var engine: LiteRtEngine? = null
+        synchronized(this) {
+            if (liteRtEngine == null || currentLiteRtModelPath != modelPath) {
+                try {
+                    liteRtEngine?.close()
+                } catch (_: Throwable) {}
+                liteRtEngine = null
+
+                Log.d(TAG, "Initializing LiteRT-LM Engine with: $modelPath")
+                val config = LiteRtEngineConfig(modelPath = modelPath)
+                val newEngine = LiteRtEngine(config)
+                newEngine.initialize()
+                liteRtEngine = newEngine
+                currentLiteRtModelPath = modelPath
+                Log.d(TAG, "LiteRT-LM Engine initialized successfully.")
+            }
+            engine = liteRtEngine
+        }
+
+        val safeEngine = engine ?: throw IllegalStateException("LiteRT-LM engine null after init")
+        val conversation = safeEngine.createConversation()
+        val fullText = StringBuilder()
+        var tokenCount = 0
+        var lastUiUpdate = 0L
+
+        try {
+            suspendCancellableCoroutine<Unit> { cont ->
+                conversation.sendMessageAsync(prompt, object : LiteRtMessageCallback {
+                    override fun onMessage(message: LiteRtMessage) {
+                        val chunk = message.contents.contents.filterIsInstance<LiteRtContent.Text>().joinToString("") { it.text }
+                        if (chunk.isNotEmpty()) {
+                            fullText.append(chunk)
+                            tokenCount++
+                            val now = System.currentTimeMillis()
+                            if (now - lastUiUpdate > 200) {
+                                lastUiUpdate = now
+                                val elapsedSec = (now - startTime) / 1000f
+                                val tokSec = if (elapsedSec > 0) tokenCount / elapsedSec else 0f
+                                onProgress?.invoke(tokenCount, tokSec, elapsedSec, fullText.takeLast(40).toString())
+                            }
+                        }
+                    }
+
+                    override fun onDone() {
+                        if (cont.isActive) cont.resume(Unit)
+                    }
+
+                    override fun onError(error: Throwable) {
+                        Log.e(TAG, "MessageCallback onError: ${error.message}", error)
+                        if (cont.isActive) cont.resumeWithException(error)
+                    }
+                })
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Streaming via MessageCallback encountered error, fallback to sync: ${t.message}")
+            if (fullText.isEmpty()) {
+                val response = conversation.sendMessage(prompt)
+                val textList = response.contents.contents.filterIsInstance<LiteRtContent.Text>().map { it.text }
+                val respStr = if (textList.isNotEmpty()) textList.joinToString("\n") else response.toString()
+                fullText.append(respStr)
+                tokenCount = (respStr.length / 4).coerceAtLeast(1)
+            }
+        }
+
+        val resultStr = fullText.toString()
+        val finalCount = if (tokenCount > 0) tokenCount else (resultStr.length / 4).coerceAtLeast(1)
+        return Pair(resultStr, finalCount)
+    }
+
+    @Synchronized
+    private fun generateWithMediaPipe(modelPath: String, prompt: String): String {
+        var engine = llmInference
+        if (engine == null || currentLoadedModelPath != modelPath) {
+            llmInference = null
+            Log.d(TAG, "Initializing MediaPipe Tasks GenAI with: $modelPath")
+            val options = LlmInference.LlmInferenceOptions.builder()
+                .setModelPath(modelPath)
+                .setMaxTokens(512)
+                .setTemperature(0.3f)
+                .build()
+            val newEngine = LlmInference.createFromOptions(context, options)
+            llmInference = newEngine
+            currentLoadedModelPath = modelPath
+            engine = newEngine
+            Log.d(TAG, "MediaPipe Tasks GenAI initialized successfully.")
+        }
+        return engine.generateResponse(prompt)?.trim() ?: ""
+    }
+
+    suspend fun elaborateNoteWithMetrics(
+        noteId: String,
+        onProgress: ((tokens: Int, tokSec: Float, elapsedSec: Float, snippet: String) -> Unit)? = null
+    ): LlmExecutionResult = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
+        val activeModelInfo = modelManager.getActiveModelInfo()
+
         val note = noteDao.getNoteByIdDirect(noteId)
             ?: noteDao.getPendingElaborations().find { it.id == noteId }
-            ?: return@withContext null
+            ?: return@withContext LlmExecutionResult(null, activeModelInfo.name, 0, 0f, 0L, "Nota non trovata nel database")
 
         val rawText = note.transcriptionText
         val effectiveText = if (!rawText.isNullOrBlank()) {
@@ -71,197 +189,138 @@ class LLMEngine(
         val cleanUserText = voiceResult.cleanBody.ifBlank { effectiveText }
 
         val tagRule = noteDao.getTagRule(assignedTag)
-        val prompt = tagRule?.systemPrompt ?: "Rielabora e struttura questa nota vocale in modo chiaro."
+        val systemPrompt = tagRule?.systemPrompt ?: "Rielabora e formatta questa nota vocale in modo strutturato e chiaro con markdown."
 
-        Log.d(TAG, "Elaborating note #${note.deviceNoteNum} (Tag: $assignedTag)...")
+        Log.d(TAG, "Starting ON-DEVICE elaboration for note #${note.deviceNoteNum} (Tag: $assignedTag)...")
 
-        // 2. Esecuzione on-device: Gemma se disponibile, altrimenti sintesi euristica
+        if (!modelManager.isModelReady()) {
+            val err = "Modello ${activeModelInfo.name} non scaricato sul telefono"
+            Log.w(TAG, err)
+            val missingMsg = "> ⚠️ **Nessun modello scaricato sul telefono.**\n\n" +
+                    "Vai in **Impostazioni** e scarica ${activeModelInfo.name} sul dispositivo.\n\n" +
+                    "---\n\n### Testo trascritto:\n$cleanUserText"
+            val title = extractTitle(cleanUserText, missingMsg)
+            val updated = note.copy(tag = assignedTag, elaboratedTitle = title, elaboratedMarkdown = missingMsg)
+            noteDao.updateNote(updated)
+            val durationMs = System.currentTimeMillis() - startTime
+            return@withContext LlmExecutionResult(updated, activeModelInfo.name, 0, 0f, durationMs, err)
+        }
+
+        val modelPath = modelManager.getModelPath()
+        if (modelPath == null) {
+            val err = "File del modello non trovato sul dispositivo"
+            val missingMsg = "> ⚠️ **$err.**\n\n### Testo trascritto:\n$cleanUserText"
+            val updated = note.copy(tag = assignedTag, elaboratedMarkdown = missingMsg)
+            noteDao.updateNote(updated)
+            val durationMs = System.currentTimeMillis() - startTime
+            return@withContext LlmExecutionResult(updated, activeModelInfo.name, 0, 0f, durationMs, err)
+        }
+
+        // 2. Costruzione del prompt secondo il template del modello selezionato
+        val formattedPrompt = if (activeModelInfo.tagTemplate == "qwen") {
+            "<|im_start|>system\nSei l'assistente per note vocali ES1. Rielabora e formatta in markdown la seguente nota per il tag '$assignedTag'. Istruzioni: $systemPrompt<|im_end|>\n<|im_start|>user\n$cleanUserText<|im_end|>\n<|im_start|>assistant\n"
+        } else {
+            "<start_of_turn>user\nSei l'assistente per note vocali ES1. Rielabora e formatta in markdown la seguente nota per il tag '$assignedTag'. Istruzioni: $systemPrompt\n\nTesto:\n$cleanUserText<end_of_turn>\n<start_of_turn>model\n"
+        }
+
         var result: String? = null
-        val llm = getOrCreateLlm()
-        if (llm != null) {
-            try {
-                val gemmaPrompt = "<start_of_turn>user\nSei l'assistente per note vocali ES1. Rielabora e formatta il seguente testo vocale per il tag '$assignedTag'.\nIstruzioni: $prompt\n\nTesto: $cleanUserText<end_of_turn>\n<start_of_turn>model\n"
-                result = llm.generateResponse(gemmaPrompt)?.trim()
-                Log.d(TAG, "Gemma on-device synthesis generated ${result?.length ?: 0} chars.")
-            } catch (t: Throwable) {
-                Log.w(TAG, "Gemma inference error: ${t.message}", t)
+        var tokensCount = 0
+        var executionError: String? = null
+        val isLiteRt = modelPath.endsWith(".litertlm")
+
+        try {
+            Log.d(TAG, "Running on-device inference with ${activeModelInfo.name} (engine=${if (isLiteRt) "LiteRT-LM" else "MediaPipe"})...")
+            if (isLiteRt) {
+                val pair = generateWithLiteRt(modelPath, formattedPrompt, onProgress)
+                result = pair.first
+                tokensCount = pair.second
+            } else {
+                result = generateWithMediaPipe(modelPath, formattedPrompt)
+                tokensCount = (result.length / 4).coerceAtLeast(1)
             }
+            Log.d(TAG, "Inference completed ($tokensCount tokens, ${result.length} chars).")
+        } catch (t: Throwable) {
+            val err = "${t.javaClass.simpleName}: ${t.localizedMessage ?: t.message}"
+            Log.e(TAG, "Inference error on ${activeModelInfo.name}: $err", t)
+            executionError = err
+            result = "> ⚠️ **Errore durante l'inferenza on-device (${activeModelInfo.name}):**\n\n`$err`\n\n---\n\n### Testo Trascritto:\n$cleanUserText"
         }
 
-        if (result.isNullOrBlank()) {
-            result = applyHeuristicElaboration(assignedTag, cleanUserText)
-        }
+        val durationMs = System.currentTimeMillis() - startTime
+        val tokSec = if (durationMs > 0 && tokensCount > 0) (tokensCount * 1000f) / durationMs else 0f
 
-        val title = extractTitle(cleanUserText, result)
+        val finalMarkdown = result?.ifBlank { null }
+            ?: "> ⚠️ Il modello non ha generato output.\n\n### Testo Trascritto:\n$cleanUserText"
+
+        val title = extractTitle(cleanUserText, finalMarkdown)
         val updatedNote = note.copy(
             tag = assignedTag,
             elaboratedTitle = title,
-            elaboratedMarkdown = result
+            elaboratedMarkdown = finalMarkdown
         )
 
         noteDao.updateNote(updatedNote)
-        return@withContext updatedNote
+        val preview = cleanUserText.take(100)
+        return@withContext LlmExecutionResult(
+            entity = updatedNote,
+            modelName = activeModelInfo.name,
+            tokensGenerated = tokensCount,
+            tokensPerSec = tokSec,
+            durationMs = durationMs,
+            error = executionError,
+            previewText = preview
+        )
     }
 
-    suspend fun processAllPending(): Int = withContext(Dispatchers.IO) {
+    suspend fun elaborateNote(noteId: String): NoteEntity? = elaborateNoteWithMetrics(noteId).entity
+
+    suspend fun processPendingElaborations(): Int = withContext(Dispatchers.IO) {
         val pending = noteDao.getPendingElaborations()
         var count = 0
         for (note in pending) {
-            val res = elaborateNote(note.id)
-            if (res != null) count++
+            if (elaborateNote(note.id) != null) count++
         }
         return@withContext count
     }
 
-    /**
-     * Riconosce i voice triggers iniziali pronunciati dall'utente (IT / EN)
-     * e rimuove il prefisso dal testo finale per non sporcare il markdown.
-     */
+    suspend fun processAllPending(): Int = processPendingElaborations()
+
     fun detectVoiceTrigger(rawText: String): VoiceTagResult {
         val trimmed = rawText.trim()
-
-        val triggerPatterns = listOf(
-            Pair(Regex("^(?:task|todo|to-do|da fare|compito|promemoria|ricordati di|ricordami di|attività)[:\\s,-]+", RegexOption.IGNORE_CASE), "Todo"),
-            Pair(Regex("^(?:idea|spunto|intuizione|pensiero|progetto nuovo)[:\\s,-]+", RegexOption.IGNORE_CASE), "Idea"),
-            Pair(Regex("^(?:meeting|riunione|colloquio|call|intervista|allineamento)[:\\s,-]+", RegexOption.IGNORE_CASE), "Meeting"),
-            Pair(Regex("^(?:spesa|buy|compra|comprare|acquistare|lista spesa|acquisiti)[:\\s,-]+", RegexOption.IGNORE_CASE), "Buy"),
-            Pair(Regex("^(?:work|lavoro|ufficio|progetto lavoro|task lavoro)[:\\s,-]+", RegexOption.IGNORE_CASE), "Work"),
-            Pair(Regex("^(?:private|privato|personale|segreto|diario)[:\\s,-]+", RegexOption.IGNORE_CASE), "Private"),
-            Pair(Regex("^(?:note|nota|appunto|scrivi)[:\\s,-]+", RegexOption.IGNORE_CASE), "Note")
+        val triggers = listOf(
+            Regex("^(?:task|todo|to-do|da fare|compito|promemoria|ricordati di|ricordami di|attività)[:\\s,-]+", RegexOption.IGNORE_CASE) to "Todo",
+            Regex("^(?:idea|spunto|intuizione|pensiero|progetto nuovo)[:\\s,-]+", RegexOption.IGNORE_CASE) to "Idea",
+            Regex("^(?:meeting|riunione|colloquio|call|intervista|allineamento)[:\\s,-]+", RegexOption.IGNORE_CASE) to "Meeting",
+            Regex("^(?:spesa|buy|compra|comprare|acquistare|lista spesa|acquisti)[:\\s,-]+", RegexOption.IGNORE_CASE) to "Buy",
+            Regex("^(?:work|lavoro|ufficio|progetto lavoro|task lavoro)[:\\s,-]+", RegexOption.IGNORE_CASE) to "Work",
+            Regex("^(?:private|privato|personale|segreto|diario)[:\\s,-]+", RegexOption.IGNORE_CASE) to "Private",
+            Regex("^(?:note|nota|appunto|scrivi)[:\\s,-]+", RegexOption.IGNORE_CASE) to "Note"
         )
 
-        for ((regex, tag) in triggerPatterns) {
+        for ((regex, tag) in triggers) {
             val match = regex.find(trimmed)
             if (match != null) {
-                val remaining = trimmed.substring(match.range.last + 1).trim()
-                val capitalized = remaining.replaceFirstChar {
-                    if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
-                }
-                return VoiceTagResult(
-                    tag = tag,
-                    cleanBody = if (capitalized.isNotBlank()) capitalized else trimmed
-                )
+                val cleanBody = trimmed.substring(match.range.last + 1).trim()
+                val capitalized = if (cleanBody.isNotEmpty()) {
+                    cleanBody.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                } else trimmed
+                return VoiceTagResult(tag, capitalized)
             }
         }
-
-        // Nessun prefisso esplicito: default su "Note"
-        return VoiceTagResult(
-            tag = "Note",
-            cleanBody = trimmed
-        )
-    }
-
-    private fun applyHeuristicElaboration(tag: String, cleanText: String): String {
-        val sentences = cleanText.split(Regex("[.!?\n]+"))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-
-        return when (tag.lowercase()) {
-            "todo" -> {
-                val sb = StringBuilder("### ✅ Cose da fare\n\n")
-                for (s in sentences) {
-                    val cap = s.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-                    sb.append("- [ ] $cap.\n")
-                }
-                sb.toString().trimEnd()
-            }
-            "meeting" -> {
-                """
-                ### 🤝 Verbale Riunione
-                
-                **Argomento Principale**:
-                ${sentences.firstOrNull() ?: cleanText}
-                
-                **Punti Chiave Discussi**:
-                ${sentences.drop(1).joinToString("\n") { "• $it" }.ifEmpty { "• " + cleanText }}
-                
-                **Azioni da intraprendere**:
-                - [ ] Verificare i punti concordati.
-                """.trimIndent()
-            }
-            "idea" -> {
-                """
-                ### 💡 Nuova Idea
-                
-                **Concetto**:
-                $cleanText
-                
-                **Punti di Forza**:
-                • Innovativo e mirato.
-                • Implementabile a breve termine.
-                
-                **Prossimi Passi**:
-                - [ ] Definire i requisiti dettagliati.
-                - [ ] Creare un prototipo rapido.
-                """.trimIndent()
-            }
-            "work" -> {
-                """
-                ### 💼 Attività di Lavoro
-                
-                **Descrizione**:
-                $cleanText
-                
-                **Deliverable**:
-                ${sentences.joinToString("\n") { "• $it" }}
-                """.trimIndent()
-            }
-            "buy" -> {
-                val sb = StringBuilder("### 🛒 Lista della Spesa\n\n")
-                for (s in sentences) {
-                    val cap = s.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-                    sb.append("- [ ] $cap\n")
-                }
-                sb.toString().trimEnd()
-            }
-            "private" -> {
-                """
-                ### 📓 Nota Personale
-                
-                > $cleanText
-                """.trimIndent()
-            }
-            else -> {
-                """
-                $cleanText
-                """.trimIndent()
-            }
-        }
+        return VoiceTagResult("Note", trimmed)
     }
 
     private fun extractTitle(cleanText: String, markdown: String): String {
-        val firstLine = cleanText.split(Regex("[.!?\n]")).firstOrNull()?.trim() ?: "Nota"
+        for (line in markdown.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith("# ")) {
+                val t = trimmed.removePrefix("# ").trim().take(45)
+                if (t.isNotBlank() && !t.contains("Nessun modello") && !t.contains("Errore")) return t
+            }
+        }
+
+        val firstLine = cleanText.split(Regex("[.!?\\n]")).firstOrNull()?.trim() ?: "Nota"
         val clean = firstLine.take(45).replace(Regex("[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ -]"), "")
         return clean.ifBlank { "Nota Registrata" }
-    }
-
-    private fun callOllama(host: String, model: String, systemPrompt: String, userText: String): String? {
-        try {
-            val url = URL("$host/api/generate")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json; utf-8")
-            conn.connectTimeout = 8000
-            conn.readTimeout = 40000
-            conn.doOutput = true
-
-            val jsonBody = JSONObject().apply {
-                put("model", model)
-                put("system", systemPrompt)
-                put("prompt", userText)
-                put("stream", false)
-            }
-
-            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-
-            if (conn.responseCode == 200) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                val respJson = JSONObject(responseText)
-                return respJson.optString("response", "").trim().ifBlank { null }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Ollama request failed, falling back to heuristics: ${e.message}")
-        }
-        return null
     }
 }

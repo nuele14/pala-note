@@ -1,37 +1,27 @@
 package com.es1.companion.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.es1.companion.data.local.NoteEntity
+import com.es1.companion.ui.theme.BodyFontFamily
+import com.es1.companion.ui.theme.TechFontFamily
 import com.es1.companion.ui.theme.getTagColor
 import java.util.Locale
 
@@ -48,8 +38,8 @@ fun NoteCard(
     val displayTitle = note.elaboratedTitle
         ?: if (hasTrans) note.transcriptionText!!.take(40) else "Nota #${note.deviceNoteNum}"
 
-    val displaySnippet = note.elaboratedMarkdown?.take(90)?.replace("#", "")?.replace("- [ ]", "•")?.trim()
-        ?: (note.transcriptionText?.take(90) ?: "Audio registrato")
+    val displaySnippet = note.elaboratedMarkdown?.take(95)?.replace("#", "")?.replace("- [ ]", "•")?.trim()
+        ?: (note.transcriptionText?.take(95) ?: "Audio registrato")
 
     val dateFormatted = note.createdUtc.take(10)
 
@@ -57,11 +47,12 @@ fun NoteCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(0.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
@@ -77,33 +68,36 @@ fun NoteCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(tagColor)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                            .border(1.dp, tagColor, RoundedCornerShape(0.dp))
+                            .background(tagColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = note.tag,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "[ ${note.tag.uppercase()} ]",
+                            color = tagColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = TechFontFamily
                         )
                     }
                     Text(
                         text = "#${note.deviceNoteNum}",
-                        color = Color.Gray,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = TechFontFamily
                     )
                 }
 
                 Text(
-                    text = String.format(Locale.US, "%.1fs • %s", note.durationSec, dateFormatted),
-                    color = Color.Gray,
-                    fontSize = 11.sp
+                    text = String.format(Locale.US, "%.1fs // %s", note.durationSec, dateFormatted),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    fontSize = 10.sp,
+                    fontFamily = TechFontFamily
                 )
             }
 
@@ -111,8 +105,9 @@ fun NoteCard(
             Text(
                 text = displayTitle,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = TechFontFamily,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -122,9 +117,10 @@ fun NoteCard(
                 text = displaySnippet,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
+                fontFamily = BodyFontFamily,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                lineHeight = 16.sp
+                lineHeight = 17.sp
             )
 
             // Status Icons Row
@@ -136,22 +132,22 @@ fun NoteCard(
                 Icon(
                     imageVector = Icons.Rounded.Mic,
                     contentDescription = "STT",
-                    tint = if (hasTrans) Color(0xFF66BB6A) else Color.DarkGray,
-                    modifier = Modifier.size(15.dp)
+                    tint = if (hasTrans) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     imageVector = Icons.Rounded.AutoAwesome,
                     contentDescription = "LLM",
-                    tint = if (hasElab) Color(0xFF42A5F5) else Color.DarkGray,
-                    modifier = Modifier.size(15.dp)
+                    tint = if (hasElab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     imageVector = Icons.Rounded.CheckCircle,
                     contentDescription = "Sync",
-                    tint = Color(0xFFAB47BC),
-                    modifier = Modifier.size(15.dp)
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }

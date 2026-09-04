@@ -21,6 +21,7 @@
 - pomodoro (andare a modificare grafica e aspetti di aggiornamento:)
 	- immagine e rimuovere tutte le cose che non mi interessavano, mettere un numero a lato di una icona a sinistra con il numero del round (lascaire solo il numero) mentre a destra avere i minuti rimanenti
 	- log di concentrazione come i commit di github nell'app android che prende i metadati del pomodoro (da vedere se è un esercizio mentale corretto per me)
+- shazam di canzoni tramite file audio (incoming)
 - impegni calendario (later)
 
 ## Hardware 

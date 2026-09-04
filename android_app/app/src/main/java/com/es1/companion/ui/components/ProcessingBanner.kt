@@ -1,0 +1,159 @@
+package com.es1.companion.ui.components
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.RecordVoiceOver
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.es1.companion.domain.queue.JobType
+import com.es1.companion.domain.queue.ProcessingJob
+import com.es1.companion.domain.queue.LiveJobProgress
+import com.es1.companion.ui.theme.TechFontFamily
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import java.util.Locale
+
+@Composable
+fun ProcessingBanner(
+    currentJob: ProcessingJob?,
+    totalInQueue: Int,
+    phaseSummary: String?,
+    liveProgress: LiveJobProgress? = null,
+    onClick: () -> Unit,
+    onCancelCurrent: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = currentJob != null,
+        enter = slideInVertically(initialOffsetY = { it }),
+        exit = slideOutVertically(targetOffsetY = { it }),
+        modifier = modifier
+    ) {
+        if (currentJob != null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .clickable { onClick() },
+                shape = RoundedCornerShape(0.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                shadowElevation = 4.dp
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            val icon = if (currentJob.type == JobType.TRANSCRIPTION) {
+                                Icons.Rounded.RecordVoiceOver
+                            } else {
+                                Icons.Rounded.Psychology
+                            }
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = currentJob.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = TechFontFamily,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (totalInQueue > 1) {
+                                        Surface(
+                                            shape = RoundedCornerShape(0.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer
+                                        ) {
+                                            Text(
+                                                text = "+${totalInQueue - 1}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                val subtitleText = when {
+                                    liveProgress != null && currentJob.type == JobType.SYNTHESIS && liveProgress.tokensGenerated > 0 -> {
+                                        "${liveProgress.tokensGenerated} token • ${String.format(Locale.US, "%.1f", liveProgress.tokensPerSec)} tok/s • ${String.format(Locale.US, "%.1f", liveProgress.elapsedSec)}s"
+                                    }
+                                    liveProgress != null && currentJob.type == JobType.TRANSCRIPTION && liveProgress.audioDurationSec > 0f -> {
+                                        "Audio ${String.format(Locale.US, "%.1f", liveProgress.audioDurationSec)}s • ${String.format(Locale.US, "%.1f", liveProgress.elapsedSec)}s trascritti"
+                                    }
+                                    liveProgress != null && liveProgress.statusText.isNotBlank() -> {
+                                        liveProgress.statusText
+                                    }
+                                    else -> phaseSummary ?: "Elaborazione in corso..."
+                                }
+
+                                Text(
+                                    text = subtitleText,
+                                    fontSize = 10.sp,
+                                    fontFamily = TechFontFamily,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onCancelCurrent,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Interrompi",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

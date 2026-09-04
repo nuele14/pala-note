@@ -79,6 +79,90 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putString("theme_mode", mode.name).apply()
     }
 
+    // On-Device Local LLM Models (Qwen 3 1.7B, Gemma 3 4B, Gemma 3 1B)
+    val supportedLlmModels = com.es1.companion.domain.llm.LlmModelManager.SUPPORTED_MODELS
+    val activeLlmModelId: StateFlow<String> = llmEngine.modelManager.activeModelId
+    val downloadedLlmModelIds: StateFlow<Set<String>> = llmEngine.modelManager.downloadedModelIds
+    val llmDownloadState: StateFlow<com.es1.companion.domain.stt.ModelDownloadState> = llmEngine.modelManager.downloadState
+
+    fun setActiveLlmModel(modelId: String) {
+        llmEngine.modelManager.setActiveModel(modelId)
+    }
+
+    fun downloadLlmModel(modelId: String) {
+        viewModelScope.launch {
+            val ok = llmEngine.modelManager.downloadModel(modelId)
+            withContext(Dispatchers.Main) {
+                val modelName = supportedLlmModels.find { it.id == modelId }?.name ?: modelId
+                if (ok) {
+                    Toast.makeText(getApplication(), "Modello on-device $modelName pronto!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(getApplication(), "Errore download $modelName", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun deleteLlmModel(modelId: String) {
+        val ok = llmEngine.modelManager.deleteModel(modelId)
+        val modelName = supportedLlmModels.find { it.id == modelId }?.name ?: modelId
+        if (ok) {
+            Toast.makeText(getApplication(), "Modello $modelName eliminato dal dispositivo", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Processing Queue Manager (STT -> LLM Batch con standby 30s)
+    val queueManager = com.es1.companion.domain.queue.ProcessingQueueManager(
+        sttEngine = sttEngine,
+        llmEngine = llmEngine,
+        noteDao = noteDao,
+        scope = viewModelScope
+    )
+
+    val currentProcessingJob: StateFlow<com.es1.companion.domain.queue.ProcessingJob?> = queueManager.currentJob
+    val processingQueue: StateFlow<List<com.es1.companion.domain.queue.ProcessingJob>> = queueManager.allJobs
+    val isProcessing: StateFlow<Boolean> = queueManager.isProcessing
+    val processingPhaseSummary: StateFlow<String?> = queueManager.phaseSummary
+    val liveProgress: StateFlow<com.es1.companion.domain.queue.LiveJobProgress?> = queueManager.liveProgress
+    val processingHistory: StateFlow<List<com.es1.companion.domain.queue.ProcessingJobHistory>> = queueManager.history
+
+    private val _showQueueSheet = MutableStateFlow(false)
+    val showQueueSheet: StateFlow<Boolean> = _showQueueSheet.asStateFlow()
+
+    fun openQueueSheet() { _showQueueSheet.value = true }
+    fun closeQueueSheet() { _showQueueSheet.value = false }
+    fun cancelProcessingJob(jobId: String) = queueManager.cancelJob(jobId)
+    fun cancelAllProcessingJobs() = queueManager.cancelAllJobs()
+    fun clearProcessingHistory() = queueManager.clearHistory()
+
+    fun retryJobFromHistory(historyItem: com.es1.companion.domain.queue.ProcessingJobHistory) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val note = noteDao.getNoteByIdDirect(historyItem.noteId) ?: return@launch
+            queueManager.enqueueNote(note)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Nota #${note.deviceNoteNum} riaccodata per elaborazione", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            noteDao.getAllNotes().collect { list ->
+                val current = _selectedNote.value ?: return@collect
+                val updated = list.find { it.id == current.id }
+                if (updated != null && (updated.transcriptionText != current.transcriptionText || updated.elaboratedMarkdown != current.elaboratedMarkdown || updated.tag != current.tag)) {
+                    _selectedNote.value = updated
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = noteDao.getTagRule("Note")
+            if (existing == null) {
+                AppDatabase.populateDefaultTagRules(noteDao)
+            }
+        }
+    }
+
     // Tag filter & search states
     private val _selectedTag = MutableStateFlow("All")
     val selectedTag: StateFlow<String> = _selectedTag.asStateFlow()
@@ -167,21 +251,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Gemma LLM Model State
-    val gemmaDownloadState = llmEngine.modelManager.downloadState
 
-    fun downloadGemmaModel() {
-        viewModelScope.launch {
-            val ok = llmEngine.modelManager.downloadModel()
-            withContext(Dispatchers.Main) {
-                if (ok) {
-                    Toast.makeText(getApplication(), "Modello Gemma 2B On-Device pronto!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(getApplication(), "Errore nel download del modello Gemma", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
 
     fun startSync(targetBleMac: String? = null) {
         viewModelScope.launch {
@@ -190,10 +260,14 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (syncResult.success) {
                 withContext(Dispatchers.IO) {
-                    Log.d(TAG, "Running on-device post-sync pipeline...")
-                    // Pipeline note vocali: STT -> LLM
-                    sttEngine.processAllPending()
-                    llmEngine.processAllPending()
+                    Log.d(TAG, "Accodamento note sincronizzate nella coda di elaborazione batch...")
+                    val pendingTranscriptions = noteDao.getPendingTranscriptions()
+                    val pendingElaborations = noteDao.getPendingElaborations()
+                    val allPending =
+                        (pendingTranscriptions + pendingElaborations).distinctBy { it.id }
+                    if (allPending.isNotEmpty()) {
+                        queueManager.enqueueBatch(allPending)
+                    }
                 }
             }
         }
@@ -210,58 +284,29 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             if (rule != null) {
                 noteDao.updateTagRule(rule.copy(systemPrompt = prompt.trim()))
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Prompt salvato per tag '$tag'", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Prompt salvato per tag '$tag'",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
     }
 
-    fun reElaborateNote(note: NoteEntity) {
-        viewModelScope.launch {
-            try {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Avvio rielaborazione nota #${note.deviceNoteNum}...", Toast.LENGTH_SHORT).show()
-                }
-
-                val isModelReady = sttEngine.modelManager.isModelReady()
-                if (!isModelReady) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Modello Whisper non scaricato. Scaricalo dalla tab Impostazioni (connesso a Internet)!", Toast.LENGTH_LONG).show()
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Trascrizione Whisper on-device in corso...", Toast.LENGTH_SHORT).show()
-                    }
-                    withContext(Dispatchers.IO) {
-                        sttEngine.transcribeNote(note.id)
-                    }
-                }
-
-                // Elaborazione intelligente (LLM / Regole Tag)
-                withContext(Dispatchers.IO) {
-                    llmEngine.elaborateNote(note.id)
-                }
-
-                // Ricarica la nota aggiornata nel bottom sheet
-                val freshNote = withContext(Dispatchers.IO) {
-                    noteDao.getNoteByIdDirect(note.id) ?: noteDao.getNoteByDeviceNum(note.deviceNoteNum, note.deviceId)
-                }
-                _selectedNote.value = freshNote
-
-                withContext(Dispatchers.Main) {
-                    if (freshNote?.transcriptionText != null && freshNote.elaboratedMarkdown != null) {
-                        Toast.makeText(getApplication(), "Nota #${note.deviceNoteNum} rielaborata con successo!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(getApplication(), "Rielaborazione completata.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (t: Throwable) {
-                Log.e(TAG, "Error during reElaborateNote", t)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Errore rielaborazione: ${t.localizedMessage ?: t.message}", Toast.LENGTH_LONG).show()
-                }
-            }
+    fun resetDefaultTagRules() {
+        viewModelScope.launch(Dispatchers.IO) {
+            AppDatabase.populateDefaultTagRules(noteDao)
         }
+    }
+
+    fun reElaborateNote(note: NoteEntity) {
+        queueManager.enqueueNote(note)
+        Toast.makeText(
+            getApplication(),
+            "Nota #${note.deviceNoteNum} aggiunta alla coda",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     fun exportMarkdown(note: NoteEntity) {
@@ -269,9 +314,14 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             val path = exporter.exportNoteEntity(note)
             withContext(Dispatchers.Main) {
                 if (path != null) {
-                    Toast.makeText(getApplication(), "Esportato in: $path", Toast.LENGTH_LONG).show()
+                    Toast.makeText(getApplication(), "Esportato in: $path", Toast.LENGTH_LONG)
+                        .show()
                 } else {
-                    Toast.makeText(getApplication(), "Errore durante l'esportazione", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Errore durante l'esportazione",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -306,9 +356,17 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             }
             withContext(Dispatchers.Main) {
                 if (result) {
-                    Toast.makeText(getApplication(), "Memoria ES1 pulita con successo!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Memoria ES1 pulita con successo!",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } else {
-                    Toast.makeText(getApplication(), "Connettiti alla rete ES1 per pulire la memoria", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Connettiti alla rete ES1 per pulire la memoria",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -325,7 +383,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         val file = File(note.audioLocalPath)
         if (!file.exists()) {
             Log.w(TAG, "Audio file not found at ${note.audioLocalPath}")
-            Toast.makeText(getApplication(), "File audio non trovato", Toast.LENGTH_SHORT).show()
+            Toast.makeText(getApplication(), "File audio non trovato", Toast.LENGTH_SHORT)
+                .show()
             return
         }
 
@@ -362,7 +421,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 if (it.isPlaying) it.stop()
                 it.release()
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
         mediaPlayer = null
         _isPlaying.value = false
@@ -373,12 +433,20 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isRefreshingFeeds.value = true
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Aggiornamento feed RSS in corso...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Aggiornamento feed RSS in corso...",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             val count = rssManager.fetchAllFeeds()
             _isRefreshingFeeds.value = false
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "$count articoli sincronizzati!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "$count articoli sincronizzati!",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -386,20 +454,49 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     fun pushArticleToDevice(article: ArticleEntity) {
         viewModelScope.launch {
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Invio articolo '${article.title}' a ED1...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Invio articolo '${article.title}' a ED1...",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             val ok = rssManager.pushArticleToDevice(article)
             withContext(Dispatchers.Main) {
                 if (ok) {
-                    Toast.makeText(getApplication(), "Articolo inviato a ED1 con successo!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Articolo inviato a ED1 con successo!",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } else {
-                    Toast.makeText(getApplication(), "Errore nell'invio a ED1 (192.168.4.1)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Errore nell'invio a ED1 (192.168.4.1)",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
     }
 
-    fun queueArticlesForSync(articleIds: List<String>, replaceExisting: Boolean = false, targetDeviceId: String = "ALL") {
+    suspend fun ensureFullArticle(article: ArticleEntity): ArticleEntity {
+        return rssManager.ensureFullArticle(article)
+    }
+
+    fun preloadArticleContent(article: ArticleEntity, onResult: ((ArticleEntity) -> Unit)? = null) {
+        viewModelScope.launch {
+            val full = rssManager.ensureFullArticle(article)
+            withContext(Dispatchers.Main) {
+                onResult?.invoke(full)
+            }
+        }
+    }
+
+    fun queueArticlesForSync(
+        articleIds: List<String>,
+        replaceExisting: Boolean = false,
+        targetDeviceId: String = "ALL"
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             if (articleIds.isEmpty()) return@launch
             if (replaceExisting) {
@@ -408,7 +505,18 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             rssDao.queueArticlesForSync(articleIds, targetDeviceId)
             withContext(Dispatchers.Main) {
                 val mode = if (replaceExisting) "sostituiti" else "aggiunti"
-                Toast.makeText(getApplication(), "${articleIds.size} articoli $mode nella lista per ED1!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "${articleIds.size} articoli $mode nella lista per ED1!",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            // Pre-carica in background i contenuti completi per ciascun articolo in coda
+            for (id in articleIds) {
+                val art = rssDao.getArticleById(id)
+                if (art != null && !art.isFullContent) {
+                    rssManager.ensureFullArticle(art)
+                }
             }
         }
     }
@@ -417,7 +525,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             rssDao.removeFromSyncQueue(articleId)
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Articolo rimosso dalla lista per ED1", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Articolo rimosso dalla lista per ED1",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -426,7 +538,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             rssDao.clearSyncQueue()
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Lista di sincronizzazione ED1 svuotata", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Lista di sincronizzazione ED1 svuotata",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -436,12 +552,20 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             if (article.queuedForSync) {
                 rssDao.removeFromSyncQueue(article.id)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Articolo rimosso dalla lista ED1", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Articolo rimosso dalla lista ED1",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             } else {
                 rssDao.queueArticlesForSync(listOf(article.id), targetDeviceId)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Articolo aggiunto alla lista ED1!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        "Articolo aggiunto alla lista ED1!",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -457,12 +581,18 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             rssDao.insertFeed(feed)
             rssManager.fetchFeedArticles(feed)
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Feed '$title' aggiunto!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(getApplication(), "Feed '$title' aggiunto!", Toast.LENGTH_SHORT)
+                    .show()
             }
         }
     }
 
-    fun updateRssFeed(feed: RssFeedEntity, newTitle: String, newUrl: String, newCategory: String = "Custom") {
+    fun updateRssFeed(
+        feed: RssFeedEntity,
+        newTitle: String,
+        newUrl: String,
+        newCategory: String = "Custom"
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = feed.copy(
                 title = newTitle.trim(),
@@ -472,7 +602,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             rssDao.updateFeed(updated)
             rssManager.fetchFeedArticles(updated)
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Feed '${updated.title}' aggiornato!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    getApplication(),
+                    "Feed '${updated.title}' aggiornato!",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

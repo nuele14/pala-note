@@ -1,6 +1,7 @@
 package com.es1.companion.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,8 +36,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.es1.companion.ui.theme.TechFontFamily
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import com.es1.companion.ui.components.NoteDetailBottomSheet
 import com.es1.companion.ui.components.SyncModalDialog
+import com.es1.companion.ui.components.ProcessingBanner
+import com.es1.companion.ui.components.ProcessingQueueBottomSheet
+import com.es1.companion.ui.screens.TagRulesScreen
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material.icons.rounded.Article
 import com.es1.companion.ui.screens.ArticlesScreen
 import com.es1.companion.ui.screens.FeedScreen
@@ -70,16 +80,40 @@ fun MainNavigation(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val modelDownloadState by viewModel.modelDownloadState.collectAsState()
-    val gemmaDownloadState by viewModel.gemmaDownloadState.collectAsState()
+    val supportedLlmModels = viewModel.supportedLlmModels
+    val activeLlmModelId by viewModel.activeLlmModelId.collectAsState()
+    val downloadedLlmModelIds by viewModel.downloadedLlmModelIds.collectAsState()
+    val llmDownloadState by viewModel.llmDownloadState.collectAsState()
+
+    val currentProcessingJob by viewModel.currentProcessingJob.collectAsState()
+    val processingQueue by viewModel.processingQueue.collectAsState()
+    val processingPhaseSummary by viewModel.processingPhaseSummary.collectAsState()
+    val liveProgress by viewModel.liveProgress.collectAsState()
+    val processingHistory by viewModel.processingHistory.collectAsState()
+    val showQueueSheet by viewModel.showQueueSheet.collectAsState()
+
+    var showTagRulesScreen by remember { mutableStateOf(false) }
+
+    if (showTagRulesScreen) {
+        TagRulesScreen(
+            tagRules = tagRules,
+            onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
+            onResetDefaults = { viewModel.resetDefaultTagRules() },
+            onBackClick = { showTagRulesScreen = false }
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "ES1",
+                        text = ">_ ES1 // COMPANION",
+                        fontFamily = TechFontFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
+                        fontSize = 16.sp,
+                        letterSpacing = 1.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 },
@@ -108,14 +142,24 @@ fun MainNavigation(
             )
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
+            Column {
+                ProcessingBanner(
+                    currentJob = currentProcessingJob,
+                    totalInQueue = processingQueue.size,
+                    phaseSummary = processingPhaseSummary,
+                    liveProgress = liveProgress,
+                    onClick = { viewModel.openQueueSheet() },
+                    onCancelCurrent = { currentProcessingJob?.id?.let { viewModel.cancelProcessingJob(it) } }
+                )
+
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
                 NavigationBarItem(
                     selected = (selectedTab == 0),
                     onClick = { selectedTab = 0 },
                     icon = { Icon(Icons.Rounded.Notes, contentDescription = "Note") },
-                    label = { Text("Note") },
+                    label = { Text("NOTE", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -125,7 +169,7 @@ fun MainNavigation(
                     selected = (selectedTab == 1),
                     onClick = { selectedTab = 1 },
                     icon = { Icon(Icons.Rounded.Article, contentDescription = "Articoli") },
-                    label = { Text("Articoli") },
+                    label = { Text("FEED", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -135,7 +179,7 @@ fun MainNavigation(
                     selected = (selectedTab == 2),
                     onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Rounded.Search, contentDescription = "Cerca") },
-                    label = { Text("Cerca") },
+                    label = { Text("CERCA", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
@@ -145,20 +189,23 @@ fun MainNavigation(
                     selected = (selectedTab == 3),
                     onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Rounded.Settings, contentDescription = "Impostazioni") },
-                    label = { Text("Impostazioni") },
+                    label = { Text("CONFIG", fontFamily = TechFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 )
             }
+            }
         },
         floatingActionButton = {
             if (selectedTab == 0) {
                 FloatingActionButton(
                     onClick = { viewModel.openSyncDialog() },
+                    shape = RoundedCornerShape(0.dp),
+                    modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(0.dp)),
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Sync,
@@ -196,7 +243,8 @@ fun MainNavigation(
                     onEditFeed = { feed, title, url, category -> viewModel.updateRssFeed(feed, title, url, category) },
                     onDeleteFeed = { viewModel.deleteRssFeed(it) },
                     onTestFeedUrl = { viewModel.testFeedUrl(it) },
-                    onToggleRead = { viewModel.toggleArticleRead(it) }
+                    onToggleRead = { viewModel.toggleArticleRead(it) },
+                    onEnsureFullArticle = { viewModel.ensureFullArticle(it) }
                 )
                 2 -> SearchScreen(
                     query = searchQuery,
@@ -207,13 +255,18 @@ fun MainNavigation(
                 3 -> SettingsScreen(
                     themeMode = themeMode,
                     onThemeModeChange = { viewModel.setThemeMode(it) },
-                    tagRules = tagRules,
-                    onSaveTagRule = { tag, prompt -> viewModel.saveTagRule(tag, prompt) },
+                    tagRulesCount = tagRules.size,
+                    onOpenTagRules = { showTagRulesScreen = true },
+                    supportedLlmModels = supportedLlmModels,
+                    activeLlmModelId = activeLlmModelId,
+                    downloadedLlmModelIds = downloadedLlmModelIds,
+                    llmDownloadState = llmDownloadState,
+                    onSetActiveLlmModel = { viewModel.setActiveLlmModel(it) },
+                    onDownloadLlmModel = { viewModel.downloadLlmModel(it) },
+                    onDeleteLlmModel = { viewModel.deleteLlmModel(it) },
                     onCleanDeviceMemory = { viewModel.cleanDeviceMemory() },
                     modelDownloadState = modelDownloadState,
-                    onDownloadModel = { viewModel.downloadWhisperModel() },
-                    gemmaDownloadState = gemmaDownloadState,
-                    onDownloadGemmaModel = { viewModel.downloadGemmaModel() }
+                    onDownloadModel = { viewModel.downloadWhisperModel() }
                 )
             }
         }
@@ -237,6 +290,22 @@ fun MainNavigation(
                 syncState = syncState,
                 onSelectBleDevice = { device -> viewModel.selectBleDeviceAndSync(device) },
                 onDismiss = { viewModel.closeSyncDialog() }
+            )
+        }
+
+        // Processing Queue Modal BottomSheet
+        if (showQueueSheet) {
+            ProcessingQueueBottomSheet(
+                currentJob = currentProcessingJob,
+                pendingJobs = processingQueue,
+                phaseSummary = processingPhaseSummary,
+                liveProgress = liveProgress,
+                history = processingHistory,
+                onCancelJob = { viewModel.cancelProcessingJob(it) },
+                onCancelAll = { viewModel.cancelAllProcessingJobs() },
+                onClearHistory = { viewModel.clearProcessingHistory() },
+                onRetryJob = { viewModel.retryJobFromHistory(it) },
+                onDismiss = { viewModel.closeQueueSheet() }
             )
         }
     }

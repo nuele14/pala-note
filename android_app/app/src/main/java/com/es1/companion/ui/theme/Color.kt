@@ -2,33 +2,27 @@ package com.es1.companion.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Cyber Dark Palette (grilledpixels.com inspired: pure black, white contrast, tech grays)
+val CyberBlack = Color(0xFF000000)
+val CyberDarkSurface = Color(0xFF0A0A0A)
+val CyberDarkCard = Color(0xFF121212)
+val CyberDarkCardBorder = Color(0xFF262626)
+val CyberWhite = Color(0xFFFFFFFF)
+val CyberLightGray = Color(0xFFE0E0E0)
+val CyberMidGray = Color(0xFF888888)
+val CyberDarkGray = Color(0xFF1E1E1E)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
-
-// ES1 Dark Palette
-val ES1DarkSurface = Color(0xFF1E1E1E)
-val ES1DarkBackground = Color(0xFF121212)
-val ES1DarkCard = Color(0xFF252525)
-val ES1DarkCardBorder = Color(0xFF383838)
-val ES1DarkOnSurface = Color(0xFFEEEEEE)
-val ES1DarkOnSurfaceVariant = Color(0xFFCCCCCC)
-
-// ES1 Light Palette
-val ES1LightSurface = Color(0xFFFFFFFF)
-val ES1LightBackground = Color(0xFFF6F7F9)
-val ES1LightCard = Color(0xFFFFFFFF)
-val ES1LightCardBorder = Color(0xFFE5E7EB)
-val ES1LightOnSurface = Color(0xFF1F2937)
-val ES1LightOnSurfaceVariant = Color(0xFF4B5563)
-
-val ES1Primary = Color(0xFF7C4DFF)
-val ES1PrimaryVariant = Color(0xFF651FFF)
-val ElectricBlue = Color(0xFF2979FF)
+// Surfing Light Palette (surfing.academy inspired: pure white, vibrant coral #FF8562, dark text)
+val SurfingWhite = Color(0xFFFFFFFF)
+val SurfingLightSurface = Color(0xFFFAFAFA)
+val SurfingLightCard = Color(0xFFFFFFFF)
+val SurfingLightCardBorder = Color(0xFFE5E5E5)
+val SurfingCoral = Color(0xFFFF8562)
+val SurfingCoralDark = Color(0xFFD65632)
+val SurfingCoralContainer = Color(0xFFFFECE6)
+val SurfingCoralOnContainer = Color(0xFF992C0F)
+val SurfingBlack = Color(0xFF111111)
+val SurfingGray = Color(0xFF666666)
 
 // Tag Colors
 val TagTodo = Color(0xFFFFA726)

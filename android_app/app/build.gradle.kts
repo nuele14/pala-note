@@ -41,6 +41,7 @@ android {
     }
     kotlinOptions {
         jvmTarget = "21"
+        freeCompilerArgs += listOf("-Xskip-metadata-version-check")
     }
     buildFeatures {
         compose = true
@@ -88,8 +89,14 @@ dependencies {
     // On-Device Whisper STT (Sherpa-ONNX)
     implementation(libs.sherpa.onnx)
 
-    // On-Device Gemma LLM Inference (MediaPipe Tasks GenAI)
+    // On-Device Gemma LLM Inference (MediaPipe Tasks GenAI for TFL3 models)
     implementation(libs.mediapipe.genai)
+
+    // On-Device LiteRT-LM Inference (for RTLM models: Qwen, Gemma 3)
+    implementation(libs.litertlm)
+
+    // Jsoup HTML Parser & Article Extractor
+    implementation(libs.jsoup)
 
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
