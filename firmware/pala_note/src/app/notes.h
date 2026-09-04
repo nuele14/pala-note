@@ -7,6 +7,7 @@ void   addToIndex(int num, const char* tag, bool hasText);
 void   updateIndexHasText(int num);
 void   markUploaded(int num);
 int    pendingSyncCount();
+size_t pendingSyncBytes();
 size_t noteAudioFileSize(int num);
 float  noteAudioDurationSec(int num);
 void   deleteNote(int num);

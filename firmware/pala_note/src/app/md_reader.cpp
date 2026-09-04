@@ -240,7 +240,7 @@ MdRenderResult showMdDocument(const char* title, const String& rawMarkdown, int 
   }
 
   // 3. Footer Bar with icons
-  drawFooterNav("page", "prev", "actions");
+  drawFooterNav("PAG", "SEL", "BCK");
 
   refresh();
 

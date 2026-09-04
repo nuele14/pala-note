@@ -183,9 +183,9 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startSync() {
+    fun startSync(targetBleMac: String? = null) {
         viewModelScope.launch {
-            val syncResult = syncManager.performSync { deviceId ->
+            val syncResult = syncManager.performSync(targetBleMac = targetBleMac) { deviceId ->
                 rssManager.pushAllQueuedArticles(deviceId = deviceId)
             }
             if (syncResult.success) {
@@ -197,6 +197,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun selectBleDeviceAndSync(device: com.es1.companion.data.remote.ble.BleDeviceItem) {
+        syncManager.bleManager.saveDevice(device.address, device.name)
+        startSync(targetBleMac = device.address)
     }
 
     fun saveTagRule(tag: String, prompt: String) {

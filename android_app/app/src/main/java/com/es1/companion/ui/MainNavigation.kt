@@ -235,6 +235,7 @@ fun MainNavigation(
         if (showSyncDialog) {
             SyncModalDialog(
                 syncState = syncState,
+                onSelectBleDevice = { device -> viewModel.selectBleDeviceAndSync(device) },
                 onDismiss = { viewModel.closeSyncDialog() }
             )
         }

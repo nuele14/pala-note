@@ -8,6 +8,9 @@
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
 #include <Fonts/FreeSansBold18pt7b.h>
+#include <Fonts/FreeMono9pt7b.h>
+#include <Fonts/FreeMonoBold9pt7b.h>
+#include <Fonts/FreeMono12pt7b.h>
 #include <math.h>
 
 // W and H are defined in the .ino. Pull them in via globals.
@@ -287,20 +290,30 @@ void drawCharLegacy(int x, int y, char c, int scale, uint8_t color) {
 
 // ─── Modern proportional font renderer ────────────────────────────────────
 
-const GFXfont* uiFontForScale(int scale) {
+const GFXfont* uiFontForScale(int scale, bool mono) {
+  if (mono) {
+    if (scale <= 1) return &FreeMono9pt7b;
+    if (scale == 2) return &FreeMonoBold9pt7b;
+    return &FreeMono12pt7b;
+  }
   if (scale <= 1) return &FreeSans9pt7b;
   if (scale == 2) return &FreeSansBold9pt7b;
   return &FreeSansBold12pt7b;
 }
 
-int uiFontHeight(int scale) {
+int uiFontHeight(int scale, bool mono) {
+  if (mono) {
+    if (scale <= 1) return 12;
+    if (scale == 2) return 14;
+    return 18;
+  }
   if (scale <= 1) return 13;
   if (scale == 2) return 15;
   return 20;
 }
 
-void textBoundsFont(const char* s, int scale, int* minX, int* minY, int* maxX, int* maxY, int* advOut) {
-  const GFXfont* font = uiFontForScale(scale);
+void textBoundsFont(const char* s, int scale, int* minX, int* minY, int* maxX, int* maxY, int* advOut, bool mono) {
+  const GFXfont* font = uiFontForScale(scale, mono);
   uint8_t first = pgm_read_byte(&font->first);
   uint8_t last  = pgm_read_byte(&font->last);
   int x = 0;
@@ -331,10 +344,14 @@ void textBoundsFont(const char* s, int scale, int* minX, int* minY, int* maxX, i
   if (advOut) *advOut = x;
 }
 
-int textW(const char* s, int scale) {
+int textW(const char* s, int scale, bool mono) {
   int minX,minY,maxX,maxY,adv;
-  textBoundsFont(s, scale, &minX, &minY, &maxX, &maxY, &adv);
+  textBoundsFont(s, scale, &minX, &minY, &maxX, &maxY, &adv, mono);
   return max(maxX - minX, adv);
+}
+
+int textMonoW(const char* s, int scale) {
+  return textW(s, scale, true);
 }
 
 void drawGlyphFont(int x, int baseline, char ch, const GFXfont* font, uint8_t color, int* adv) {
@@ -362,10 +379,10 @@ void drawGlyphFont(int x, int baseline, char ch, const GFXfont* font, uint8_t co
   if (adv) *adv = xa;
 }
 
-void drawStr(int x, int y, const char* s, int scale, uint8_t color) {
-  const GFXfont* font = uiFontForScale(scale);
+void drawStr(int x, int y, const char* s, int scale, uint8_t color, bool mono) {
+  const GFXfont* font = uiFontForScale(scale, mono);
   int minX,minY,maxX,maxY,advTotal;
-  textBoundsFont(s, scale, &minX, &minY, &maxX, &maxY, &advTotal);
+  textBoundsFont(s, scale, &minX, &minY, &maxX, &maxY, &advTotal, mono);
   int cursor   = x - minX;
   int baseline = y - minY;
   while (*s) {
@@ -376,31 +393,39 @@ void drawStr(int x, int y, const char* s, int scale, uint8_t color) {
   }
 }
 
-void drawStrC(int cx, int y, const char* s, int scale, uint8_t color) {
-  drawStr(cx - textW(s, scale) / 2, y, s, scale, color);
+void drawStrC(int cx, int y, const char* s, int scale, uint8_t color, bool mono) {
+  drawStr(cx - textW(s, scale, mono) / 2, y, s, scale, color, mono);
 }
 
-void drawStrFit(int x, int y, int maxW, const char* s, int scale, uint8_t color) {
+void drawStrMono(int x, int y, const char* s, int scale, uint8_t color) {
+  drawStr(x, y, s, scale, color, true);
+}
+
+void drawStrMonoC(int cx, int y, const char* s, int scale, uint8_t color) {
+  drawStrC(cx, y, s, scale, color, true);
+}
+
+void drawStrFit(int x, int y, int maxW, const char* s, int scale, uint8_t color, bool mono) {
   char buf[80];
   strncpy(buf, s ? s : "", sizeof(buf)-1);
   buf[sizeof(buf)-1] = 0;
 
-  if (textW(buf, scale) <= maxW) { drawStr(x, y, buf, scale, color); return; }
+  if (textW(buf, scale, mono) <= maxW) { drawStr(x, y, buf, scale, color, mono); return; }
 
   int len = strlen(buf);
-  while (len > 0 && textW(buf, scale) > maxW) {
+  while (len > 0 && textW(buf, scale, mono) > maxW) {
     len--;
     buf[len] = 0;
     if (len > 3) {
       buf[len-3] = '.'; buf[len-2] = '.'; buf[len-1] = '.'; buf[len] = 0;
     }
   }
-  drawStr(x, y, buf, scale, color);
+  drawStr(x, y, buf, scale, color, mono);
 }
 
-void drawStrInBox(int x, int y, int w, int h, const char* s, int scale, uint8_t color) {
-  int fh = uiFontHeight(scale);
-  drawStrC(x + w/2, y + (h - fh)/2, s, scale, color);
+void drawStrInBox(int x, int y, int w, int h, const char* s, int scale, uint8_t color, bool mono) {
+  int fh = uiFontHeight(scale, mono);
+  drawStrC(x + w/2, y + (h - fh)/2, s, scale, color, mono);
 }
 
 void uppercaseCopy(char* dst, const char* src, int maxLen) {

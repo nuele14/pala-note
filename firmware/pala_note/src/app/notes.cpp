@@ -155,6 +155,16 @@ int pendingSyncCount() {
   return count;
 }
 
+size_t pendingSyncBytes() {
+  size_t total = 0;
+  for (size_t i = 0; i < noteIndex.size(); i++) {
+    if (!noteIndex[i].uploaded) {
+      total += noteAudioFileSize(noteIndex[i].num);
+    }
+  }
+  return total;
+}
+
 size_t noteAudioFileSize(int num) {
   char path[64];
   snprintf(path, sizeof(path), "%s/note_%03d.wav", NOTES_DIR, num);

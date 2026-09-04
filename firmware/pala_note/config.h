@@ -67,7 +67,7 @@
 /* UI timing */
 #define REC_HOLD_MS         350
 #define BTN_LONG_MS         600
-#define DOUBLE_MS           200
+#define DOUBLE_MS           280
 #define ULTRA_SLEEP_MS      120000UL
 #define TICKER_INTERVAL_MS  950
 

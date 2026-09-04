@@ -26,6 +26,9 @@ extern "C" {
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
 #include <Fonts/FreeSansBold18pt7b.h>
+#include <Fonts/FreeMono9pt7b.h>
+#include <Fonts/FreeMonoBold9pt7b.h>
+#include <Fonts/FreeMono12pt7b.h>
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
@@ -44,6 +47,7 @@ extern "C" {
 #include "src/app/led.h"
 #include "src/app/md_reader.h"
 #include "src/app/reader.h"
+#include "src/app/ble_sync.h"
 
 // All pin, timing, path and threshold constants live in config.h.
 
@@ -143,11 +147,13 @@ void startRecordFlow() {
   showIdle();
 }
 
+static int  syncSelectCursor = 0;
+static bool isBleTransfer    = false;
+
 void startSyncFlow() {
-  state = STATE_TRANSFER;
-  startSoftApSync();
-  int pending = pendingSyncCount();
-  showSyncMode(getSoftApSsid().c_str(), "192.168.4.1", pending);
+  syncSelectCursor = 0;
+  state = STATE_SYNC_SELECT;
+  showSyncSelect(syncSelectCursor);
 }
 
 void startTransferMode() {
@@ -335,16 +341,22 @@ void loop() {
     ButtonEvent rec = readButtonEvent(BTN_REC);
     ButtonEvent pwr = readButtonEvent(BTN_PWR);
 
-    if (rec == EV_SINGLE || rec == EV_LONG) {
+    if (pwr == EV_SINGLE) {
+      soundNext();
+      if (tagCount > 0) tagCursor = (tagCursor + 1) % tagCount;
+      showTagSelect(tagCursor);
+    } else if (rec == EV_DOUBLE || rec == EV_LONG) {
+      soundBack();
+      saveTag(lastRecNum, "Note");
+      resetActivity();
+      state = STATE_IDLE;
+      showIdle();
+    } else if (rec == EV_SINGLE) {
       soundSelect();
       saveTag(lastRecNum, tags[constrain(tagCursor, 0, max(tagCount - 1, 0))]);
       resetActivity();
       state = STATE_IDLE;
       showIdle();
-    } else if (pwr == EV_SINGLE) {
-      soundNext();
-      if (tagCount > 0) tagCursor = (tagCursor + 1) % tagCount;
-      showTagSelect(tagCursor);
     }
   }
 
@@ -405,17 +417,8 @@ void loop() {
     ButtonEvent rec = readButtonEvent(BTN_REC);
     ButtonEvent pwr = readButtonEvent(BTN_PWR);
 
-    if (pwr == EV_SINGLE || pwr == EV_LONG) {
-      soundBack();
-      state = STATE_MENU;
-      showMenu(menuCursor);
-    } else if (rec == EV_SINGLE) {
-      shikamaruPaused = !shikamaruPaused;
-      soundSelect();
-      shikamaruLastTickMs = millis();
-      showShikamaru(shikamaruRemainingSec, shikamaruIsFocus, shikamaruSession, shikamaruPaused);
-    } else if (rec == EV_LONG) {
-      soundSelect();
+    if (pwr == EV_SINGLE) {
+      soundNext();
       if (shikamaruIsFocus) {
         shikamaruIsFocus = false;
         shikamaruRemainingSec = 5 * 60;
@@ -426,6 +429,15 @@ void loop() {
       }
       shikamaruPaused = true;
       showShikamaru(shikamaruRemainingSec, shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+    } else if (rec == EV_SINGLE) {
+      shikamaruPaused = !shikamaruPaused;
+      soundSelect();
+      shikamaruLastTickMs = millis();
+      showShikamaru(shikamaruRemainingSec, shikamaruIsFocus, shikamaruSession, shikamaruPaused);
+    } else if (rec == EV_LONG || rec == EV_DOUBLE) {
+      soundBack();
+      state = STATE_MENU;
+      showMenu(menuCursor);
     }
 
     // Timer countdown
@@ -508,34 +520,93 @@ void loop() {
     ButtonEvent rec = readButtonEvent(BTN_REC);
     ButtonEvent pwr = readButtonEvent(BTN_PWR);
 
-    if (rec == EV_DOUBLE || rec == EV_LONG || rec == EV_SINGLE || pwr == EV_SINGLE) {
+    if (pwr == EV_SINGLE) {
+      soundNext();
+    } else if (rec == EV_SINGLE) {
+      soundSelect();
+      state = STATE_SETTINGS;
+      showSettings(settingsCursor);
+    } else if (rec == EV_LONG || rec == EV_DOUBLE) {
       soundBack();
       state = STATE_SETTINGS;
       showSettings(settingsCursor);
     }
   }
 
+  // SYNC SELECT (BLE vs WI-FI) ───────────────────────────────────────────
+  else if (state == STATE_SYNC_SELECT) {
+    ButtonEvent rec = readButtonEvent(BTN_REC);
+    ButtonEvent pwr = readButtonEvent(BTN_PWR);
+
+    if (pwr == EV_SINGLE) {
+      soundNext();
+      syncSelectCursor = (syncSelectCursor + 1) % 2;
+      showSyncSelect(syncSelectCursor);
+    } else if (rec == EV_SINGLE) {
+      soundSelect();
+      if (syncSelectCursor == 0) {
+        // BLE Mode
+        isBleTransfer = true;
+        state = STATE_TRANSFER;
+        startBleSync();
+      } else {
+        // Wi-Fi Mode
+        isBleTransfer = false;
+        state = STATE_TRANSFER;
+        startSoftApSync();
+        int pending = pendingSyncCount();
+        showSyncMode(getSoftApSsid().c_str(), "192.168.4.1", pending);
+      }
+    } else if (rec == EV_DOUBLE || rec == EV_LONG) {
+      soundBack();
+      state = STATE_MENU;
+      showMenu(menuCursor);
+    }
+  }
+
   // TRANSFER / SYNC MODE ─────────────────────────────────────────────────
   else if (state == STATE_TRANSFER) {
-    if (transferServerActive) transferServer.handleClient();
-
-    if (isSyncDoneRequested()) {
-      clearSyncDoneRequested();
-      showDone();
-      soundSuccess();
-      delay(1500);
-      stopTransferMode();
-      resetActivity();
-      state = STATE_IDLE;
-      showIdle();
+    if (isBleTransfer) {
+      handleBleSyncLoop();
+      if (isBleSyncDone()) {
+        showDone();
+        soundSuccess();
+        delay(1500);
+        stopBleSync();
+        resetActivity();
+        state = STATE_IDLE;
+        showIdle();
+      } else {
+        ButtonEvent rec = readButtonEvent(BTN_REC);
+        if (rec == EV_DOUBLE || rec == EV_LONG) {
+          soundBack();
+          stopBleSync();
+          resetActivity();
+          state = STATE_IDLE;
+          showIdle();
+        }
+      }
     } else {
-      ButtonEvent rec = readButtonEvent(BTN_REC);
-      if (rec == EV_DOUBLE || rec == EV_LONG) {
-        soundBack();
+      if (transferServerActive) transferServer.handleClient();
+
+      if (isSyncDoneRequested()) {
+        clearSyncDoneRequested();
+        showDone();
+        soundSuccess();
+        delay(1500);
         stopTransferMode();
         resetActivity();
         state = STATE_IDLE;
         showIdle();
+      } else {
+        ButtonEvent rec = readButtonEvent(BTN_REC);
+        if (rec == EV_DOUBLE || rec == EV_LONG) {
+          soundBack();
+          stopTransferMode();
+          resetActivity();
+          state = STATE_IDLE;
+          showIdle();
+        }
       }
     }
   }
@@ -637,18 +708,17 @@ void loop() {
       int totalPages = mdCalculateTotalPages(text);
 
       if (pwr == EV_SINGLE) {
-        // Pagina successiva
+        // PWR: Pagina successiva (scende nel testo)
         soundNext();
         readerArticlePage = (readerArticlePage + 1) % totalPages;
         showReaderArticle(readerCursor, readerArticlePage);
       } else if (rec == EV_SINGLE) {
-        // Pagina precedente
+        // REC: Pagina successiva
         soundNext();
-        if (readerArticlePage > 0) readerArticlePage--;
-        else readerArticlePage = max(0, totalPages - 1);
+        readerArticlePage = (readerArticlePage + 1) % totalPages;
         showReaderArticle(readerCursor, readerArticlePage);
-      } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
-        // Torna alla lista articoli
+      } else if (rec == EV_LONG || rec == EV_DOUBLE || pwr == EV_LONG) {
+        // Hold REC: Torna alla lista articoli
         soundBack();
         state = STATE_READER_LIST;
         showReaderList(readerCursor);
@@ -672,7 +742,7 @@ void loop() {
       readerCursor = constrain(readerCursor, 0, max(articleCount() - 1, 0));
       state = STATE_READER_LIST;
       showReaderList(readerCursor);
-    } else if (pwr == EV_SINGLE || rec == EV_LONG || pwr == EV_LONG) {
+    } else if (pwr == EV_SINGLE || rec == EV_DOUBLE || rec == EV_LONG || pwr == EV_LONG) {
       soundBack();
       state = STATE_READER_LIST;
       showReaderList(readerCursor);
@@ -724,7 +794,7 @@ void loop() {
         state = STATE_DELETE_CONFIRM;
         showDeleteConfirm(noteIndex[idx].num);
       }
-    } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
+    } else if (rec == EV_DOUBLE || rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
       // TORNA ALLA LISTA DELLE NOTE
       soundBack();
       state = STATE_NOTE_LIST;
@@ -737,14 +807,23 @@ void loop() {
     ButtonEvent rec = readButtonEvent(BTN_REC);
     ButtonEvent pwr = readButtonEvent(BTN_PWR);
 
-    if (rec == EV_SINGLE || pwr == EV_SINGLE) {
+    if (pwr == EV_SINGLE) {
+      soundNext();
+    } else if (rec == EV_SINGLE) {
+      soundSelect();
+      int idx = noteAtFilteredIndex(listCursor);
+      if (idx >= 0 && (noteIndex[idx].hasText || noteIndex[idx].uploaded)) {
+        mdReaderPage = 0;
+        state = STATE_MD_READER;
+        showNoteMdReader(listCursor, mdReaderPage);
+      } else {
+        state = STATE_NOTE_ACTIONS;
+        showNoteActions(listCursor, noteActionCursor);
+      }
+    } else if (rec == EV_LONG || rec == EV_DOUBLE || pwr == EV_LONG) {
       soundBack();
       state = STATE_NOTE_ACTIONS;
       showNoteActions(listCursor, noteActionCursor);
-    } else if (rec == EV_LONG || pwr == EV_LONG) {
-      soundBack();
-      state = STATE_NOTE_LIST;
-      showNoteList(listCursor);
     }
   }
 
@@ -759,18 +838,17 @@ void loop() {
       int totalPages = mdCalculateTotalPages(text);
 
       if (pwr == EV_SINGLE) {
-        // PAGINA SUCCESSIVA
+        // PWR: PAGINA SUCCESSIVA (scende nel documento)
         soundNext();
         mdReaderPage = (mdReaderPage + 1) % totalPages;
         showNoteMdReader(listCursor, mdReaderPage);
       } else if (rec == EV_SINGLE) {
-        // PAGINA PRECEDENTE
+        // REC: PAGINA SUCCESSIVA
         soundNext();
-        if (mdReaderPage > 0) mdReaderPage--;
-        else mdReaderPage = max(0, totalPages - 1);
+        mdReaderPage = (mdReaderPage + 1) % totalPages;
         showNoteMdReader(listCursor, mdReaderPage);
-      } else if (rec == EV_LONG || pwr == EV_LONG || pwr == EV_DOUBLE) {
-        // ESCI DAL LETTORE E TORNA AL MENU AZIONI
+      } else if (rec == EV_LONG || rec == EV_DOUBLE || pwr == EV_LONG) {
+        // Hold REC: ESCI DAL LETTORE E TORNA AL MENU AZIONI
         soundBack();
         state = STATE_NOTE_ACTIONS;
         showNoteActions(listCursor, noteActionCursor);

@@ -108,33 +108,73 @@ void iconNoteLines(int cx, int cy) {
 // ─── Layout helpers ────────────────────────────────────────────────────────
 
 void drawHeader(const char* title, const char* rightInfo) {
-  fillRect(0, 0, W, 28, BLACK);
-  drawStrC(W/2, 10, title, 1, WHITE);
+  fillRect(0, 0, W, 26, BLACK);
+  drawStrMonoC(W/2, 6, title, 1, WHITE);
   if (rightInfo) {
-    int rw = textW(rightInfo, 1);
-    drawStr(W - 8 - rw, 10, rightInfo, 1, WHITE);
+    int rw = textMonoW(rightInfo, 1);
+    drawStrMono(W - 8 - rw, 6, rightInfo, 1, WHITE);
   }
 }
 
+static void to3Letter(char out[4], const char* in) {
+  out[0] = 0;
+  if (!in || !in[0]) return;
+
+  if (strcasecmp(in, "next") == 0)     { strcpy(out, "NXT"); return; }
+  if (strcasecmp(in, "select") == 0)   { strcpy(out, "SEL"); return; }
+  if (strcasecmp(in, "back") == 0)     { strcpy(out, "BCK"); return; }
+  if (strcasecmp(in, "menu") == 0)     { strcpy(out, "MNU"); return; }
+  if (strcasecmp(in, "standby") == 0)  { strcpy(out, "OFF"); return; }
+  if (strcasecmp(in, "actions") == 0)  { strcpy(out, "ACT"); return; }
+  if (strcasecmp(in, "list") == 0)     { strcpy(out, "LST"); return; }
+  if (strcasecmp(in, "read") == 0)     { strcpy(out, "RED"); return; }
+  if (strcasecmp(in, "delete") == 0)   { strcpy(out, "DEL"); return; }
+  if (strcasecmp(in, "cancel") == 0)   { strcpy(out, "CAN"); return; }
+  if (strcasecmp(in, "confirm") == 0)  { strcpy(out, "CFM"); return; }
+  if (strcasecmp(in, "toggle") == 0)   { strcpy(out, "TOG"); return; }
+  if (strcasecmp(in, "settings") == 0) { strcpy(out, "SET"); return; }
+  if (strcasecmp(in, "down") == 0)     { strcpy(out, "DWN"); return; }
+  if (strcasecmp(in, "page") == 0)     { strcpy(out, "PAG"); return; }
+  if (strcasecmp(in, "play") == 0)     { strcpy(out, "PLY"); return; }
+  if (strcasecmp(in, "pause") == 0)    { strcpy(out, "PAU"); return; }
+  if (strcasecmp(in, "mode") == 0)     { strcpy(out, "MOD"); return; }
+  if (strcasecmp(in, "sync") == 0)     { strcpy(out, "SYN"); return; }
+  if (strcasecmp(in, "later") == 0)    { strcpy(out, "LAT"); return; }
+
+  int i = 0;
+  for (; i < 3 && in[i]; i++) {
+    char c = in[i];
+    if (c >= 'a' && c <= 'z') c -= 32;
+    out[i] = c;
+  }
+  out[i] = 0;
+}
+
 void drawHints(const char* recLabel, const char* pwrLabel) {
-  hline(0, 179, W, BLACK);
-  fillRect(0, 180, W, 20, WHITE);
-  drawStr(8, 186, recLabel, 1, BLACK);
-  int rw = textW(pwrLabel, 1);
-  drawStr(W - 8 - rw, 186, pwrLabel, 1, BLACK);
+  const int footerY = 182;
+  hline(0, footerY - 1, W, BLACK);
+  fillRect(0, footerY, W, H - footerY, WHITE);
+  char rec3[4] = {0}, pwr3[4] = {0};
+  to3Letter(rec3, recLabel);
+  to3Letter(pwr3, pwrLabel);
+  drawIconTriangle(10, footerY + 5, BLACK);
+  drawStrMono(19, footerY + 4, rec3, 1, BLACK);
+  int rw = textMonoW(pwr3, 1);
+  drawIconPower(W - 10 - rw - 8, footerY + 5, BLACK);
+  drawStrMono(W - 10 - rw, footerY + 4, pwr3, 1, BLACK);
 }
 
 void drawBadge(int cx, int cy, const char* text, bool filled) {
   char up[32]; uppercaseCopy(up, text, sizeof(up));
-  int tw = textW(up, 1);
-  int bw = tw + 20, bh = 20;
+  int tw = textMonoW(up, 1);
+  int bw = tw + 16, bh = 18;
   int bx = cx - bw/2, by = cy - bh/2;
   if (filled) {
-    fillRoundRect(bx, by, bw, bh, 9, BLACK);
-    drawStrC(cx, by + 6, up, 1, WHITE);
+    fillRect(bx, by, bw, bh, BLACK);
+    drawStrMonoC(cx, by + 4, up, 1, WHITE);
   } else {
-    strokeRoundRect(bx, by, bw, bh, 9, 2, BLACK);
-    drawStrC(cx, by + 6, up, 1, BLACK);
+    strokeRect(bx, by, bw, bh, 1, BLACK);
+    drawStrMonoC(cx, by + 4, up, 1, BLACK);
   }
 }
 
@@ -175,11 +215,11 @@ void drawProductWordmark(int cx, int y, uint8_t color) {
 
 void drawModernPill(int x, int y, int w, int h, const char* label, bool active) {
   if (active) {
-    fillRoundRect(x, y, w, h, h/2, BLACK);
-    drawStrInBox(x, y, w, h, label, 1, WHITE);
+    fillRect(x, y, w, h, BLACK);
+    drawStrInBox(x, y, w, h, label, 1, WHITE, true);
   } else {
-    strokeRoundRect(x, y, w, h, h/2, 1, BLACK);
-    drawStrInBox(x, y, w, h, label, 1, BLACK);
+    strokeRect(x, y, w, h, 1, BLACK);
+    drawStrInBox(x, y, w, h, label, 1, BLACK, true);
   }
 }
 
@@ -223,37 +263,37 @@ void drawMinimalCloudIcon(int cx, int cy, uint8_t color) {
 }
 
 void drawMenuTile(int x, int y, int w, int h, const char* label, int icon, bool active) {
-  if (active) fillRoundRect(x, y, w, h, 12, BLACK);
-  else        strokeRoundRect(x, y, w, h, 12, 1, BLACK);
+  if (active) fillRect(x, y, w, h, BLACK);
+  else        strokeRect(x, y, w, h, 1, BLACK);
   uint8_t col = active ? WHITE : BLACK;
   int cx = x + w/2;
   fillCircle(cx, y + 17, 4, col);
-  drawStrInBox(x + 4, y + 29, w - 8, 18, label, 1, col);
+  drawStrInBox(x + 4, y + 29, w - 8, 18, label, 1, col, true);
 }
 
 void drawNoteCard(int y, int idx, bool active) {
-  const int x = 16, w = 168, h = 39;
-  if (active) fillRoundRect(x, y, w, h, 8, BLACK);
-  else        strokeRoundRect(x, y, w, h, 8, 1, BLACK);
+  const int x = 14, w = 172, h = 39;
+  if (active) fillRect(x, y, w, h, BLACK);
+  else        strokeRect(x, y, w, h, 1, BLACK);
   uint8_t col = active ? WHITE : BLACK;
 
   char n[8]; snprintf(n, sizeof(n), "#%03d", noteIndex[idx].num);
-  String tagLabel = normalizeForDisplay(String(noteIndex[idx].tag));
-  drawStr(x + 10, y + 5, n, 1, col);
-  drawStrFit(x + 66, y + 5, 88, tagLabel.c_str(), 1, col);
+  String tagLabel = "[" + normalizeForDisplay(String(noteIndex[idx].tag)) + "]";
+  drawStrMono(x + 8, y + 5, n, 1, col);
+  drawStrMono(x + 68, y + 5, tagLabel.c_str(), 1, col);
   String ticker = noteTickerText(idx);
-  drawTickerText(x + 10, y + 22, 145, ticker, active, col);
+  drawTickerText(x + 8, y + 22, 154, ticker, active, col);
 }
 
 void drawListMenuCard(int y, const char* title, const char* meta, bool active) {
-  const int x = 16, w = 168, h = 32;
-  if (active) fillRoundRect(x, y, w, h, 8, BLACK);
-  else        strokeRoundRect(x, y, w, h, 8, 1, BLACK);
+  const int x = 14, w = 172, h = 32;
+  if (active) fillRect(x, y, w, h, BLACK);
+  else        strokeRect(x, y, w, h, 1, BLACK);
   uint8_t col = active ? WHITE : BLACK;
-  drawStrFit(x + 10, y + 8, meta ? 92 : 140, title, 1, col);
+  drawStrFit(x + 10, y + 8, meta ? 96 : 152, title, 1, col);
   if (meta && strlen(meta) > 0) {
-    int mw = min(textW(meta, 1), 56);
-    drawStrFit(x + w - 10 - mw, y + 8, 56, meta, 1, col);
+    int mw = min(textMonoW(meta, 1), 60);
+    drawStrMono(x + w - 8 - mw, y + 8, meta, 1, col);
   }
 }
 
@@ -268,27 +308,60 @@ void drawIconTriangle(int x, int y, uint8_t color) {
   fillTriangle(x, y, x, y + 6, x + 5, y + 3, color);
 }
 
+void drawIconHoldBack(int x, int y, uint8_t color) {
+  // Left-pointing double chevron << representing long-press return/back
+  fillTriangle(x + 4, y, x + 4, y + 6, x, y + 3, color);
+  fillTriangle(x + 9, y, x + 9, y + 6, x + 5, y + 3, color);
+}
+
 void drawFooterNav(const char* pwrAction, const char* actAction, const char* holdAction) {
-  hline(0, 166, W, BLACK);
-  fillRect(0, 167, W, 33, WHITE);
+  const int footerY = 182;
+  const int iconY   = footerY + 5;
+  const int textY   = footerY + 4;
 
-  if (pwrAction) {
-    drawIconPower(12, 172, BLACK);
-    drawStr(22, 172, pwrAction, 1, BLACK);
-  }
+  hline(0, footerY - 1, W, BLACK);
+  fillRect(0, footerY, W, H - footerY, WHITE);
 
-  if (actAction) {
-    int actW = textW(actAction, 1);
-    drawIconTriangle(W - 12 - actW - 8, 172, BLACK);
-    drawStr(W - 12 - actW, 172, actAction, 1, BLACK);
-  }
+  char pwr3[4] = {0}, act3[4] = {0}, hld3[4] = {0};
+  to3Letter(pwr3, pwrAction);
+  to3Letter(act3, actAction);
+  to3Letter(hld3, holdAction);
 
-  if (holdAction) {
-    drawStr(12, 186, "hold", 1, BLACK);
-    drawIconTriangle(38, 186, BLACK);
-    char buf[32];
-    snprintf(buf, sizeof(buf), ": %s", holdAction);
-    drawStr(46, 186, buf, 1, BLACK);
+  if (hld3[0]) {
+    // Layout a 3 sezioni su riga singola (PWR - REC - Hold REC)
+    // 1. PWR (Sinistra): [IconPower] 3-lettere
+    if (pwr3[0]) {
+      drawIconPower(6, iconY, BLACK);
+      drawStrMono(16, textY, pwr3, 1, BLACK);
+    }
+
+    // 2. REC Click (Centro): [IconTriangle] 3-lettere
+    if (act3[0]) {
+      int actW = textMonoW(act3, 1);
+      int totalMidW = 7 + actW;
+      int midX = (W - totalMidW) / 2;
+      drawIconTriangle(midX, iconY, BLACK);
+      drawStrMono(midX + 7, textY, act3, 1, BLACK);
+    }
+
+    // 3. Hold REC (Destra): [IconHoldBack] 3-lettere
+    int holdW = textMonoW(hld3, 1);
+    int totalRightW = 12 + holdW;
+    int rightX = W - 6 - totalRightW;
+    drawIconHoldBack(rightX, iconY, BLACK);
+    drawStrMono(rightX + 12, textY, hld3, 1, BLACK);
+  } else {
+    // Layout a 2 sezioni su riga singola: PWR a sinistra, REC a destra
+    if (pwr3[0]) {
+      drawIconPower(10, iconY, BLACK);
+      drawStrMono(20, textY, pwr3, 1, BLACK);
+    }
+    if (act3[0]) {
+      int actW = textMonoW(act3, 1);
+      int rightX = W - 10 - (7 + actW);
+      drawIconTriangle(rightX, iconY, BLACK);
+      drawStrMono(rightX + 7, textY, act3, 1, BLACK);
+    }
   }
 }
 
@@ -366,25 +439,25 @@ void showTagSelect(int cursor) {
     int y = y0 + i*(h+gap);
     drawModernPill(x, y, w, h, tags[i], i == cursor);
   }
-  drawFooterNav("next", "select");
+  drawFooterNav("NXT", "SEL", "BCK");
   refresh();
 }
 
 void showMenu(int cursor) {
   clearWhite();
-  drawStr(16, 11, "menu", 1, BLACK);
+  drawStrMono(16, 10, ">_ MENU", 1, BLACK);
   drawBatteryMicroBadge(154, 11, readBatteryPercent(), BLACK);
   hline(16, 24, W-32, BLACK);
   const int y0 = 30, step = 26, itemH = 22;
   for (int row = 0; row < MENU_COUNT; row++) {
     bool active = (row == cursor);
     int y = y0 + row * step;
-    if (active) fillRoundRect(16, y, 168, itemH, 4, BLACK);
-    else        strokeRoundRect(16, y, 168, itemH, 4, 1, BLACK);
+    if (active) fillRect(16, y, 168, itemH, BLACK);
+    else        strokeRect(16, y, 168, itemH, 1, BLACK);
     uint8_t col = active ? WHITE : BLACK;
-    drawStrInBox(16, y, 168, itemH, MENU_ITEMS[row], 1, col);
+    drawStrInBox(16, y, 168, itemH, MENU_ITEMS[row], 1, col, true);
   }
-  drawFooterNav("next", "select", "standby");
+  drawFooterNav("NXT", "SEL", "OFF");
   refresh();
 }
 
@@ -467,22 +540,22 @@ void showTagBrowser(int cursor) {
     if (strcmp(noteIndex[i].tag, tags[cursor])==0) cnt++;
   char cb[20]; snprintf(cb, sizeof(cb), "%d notes", cnt);
   drawStrC(100, 130, cb, 1, BLACK);
-  drawFooterNav("next", "select", "menu");
+  drawFooterNav("NXT", "SEL", "MNU");
   refresh();
 }
 
 void showNoteList(int cursor) {
   clearWhite();
   int count = filteredCount();
-  char cb[20]; snprintf(cb, sizeof(cb), "notes (%d)", count);
-  drawStr(16, 12, cb, 1, BLACK);
+  char cb[24]; snprintf(cb, sizeof(cb), ">_ NOTES [%d]", count);
+  drawStrMono(16, 11, cb, 1, BLACK);
   drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
   hline(16, 26, W - 32, BLACK);
 
   if (count <= 0) {
     drawMinimalDocIcon(100, 76, BLACK);
-    drawStrC(100, 116, "no notes yet", 1, BLACK);
-    drawFooterNav("back", "back", "menu");
+    drawStrMonoC(100, 116, "NO NOTES YET", 1, BLACK);
+    drawFooterNav("NXT", "SEL", "MNU");
     refresh();
     return;
   }
@@ -503,29 +576,31 @@ void showNoteList(int cursor) {
     uint8_t col = active ? WHITE : BLACK;
 
     if (active) {
-      fillRoundRect(16, y, 168, itemH, 5, BLACK);
+      fillRect(16, y, 168, itemH, BLACK);
+    } else {
+      strokeRect(16, y, 168, itemH, 1, BLACK);
     }
 
     char n[8]; snprintf(n, sizeof(n), "#%03d", noteIndex[idx].num);
-    drawStr(active ? 22 : 18, y + 5, n, 1, col);
+    drawStrMono(active ? 22 : 18, y + 5, n, 1, col);
 
-    String tagLabel = normalizeForDisplay(String(noteIndex[idx].tag));
-    drawStrFit(active ? 66 : 62, y + 5, 68, tagLabel.c_str(), 1, col);
+    String tagLabel = "[" + normalizeForDisplay(String(noteIndex[idx].tag)) + "]";
+    drawStrFit(active ? 66 : 62, y + 5, 66, tagLabel.c_str(), 1, col, true);
 
     if (noteIndex[idx].uploaded) {
-      drawStr(W - 46, y + 5, "ok", 1, col);
+      drawStrMono(W - 46, y + 5, "OK", 1, col);
     } else {
-      drawStr(W - 46, y + 5, "--", 1, col);
+      drawStrMono(W - 46, y + 5, "--", 1, col);
     }
 
     if (noteIndex[idx].hasText) {
-      drawStr(W - 26, y + 5, "md", 1, col);
+      drawStrMono(W - 26, y + 5, "MD", 1, col);
     } else {
-      drawStr(W - 26, y + 5, "wav", 1, col);
+      drawStrMono(W - 26, y + 5, "WAV", 1, col);
     }
   }
 
-  drawFooterNav("next", "select", "menu");
+  drawFooterNav("NXT", "SEL", "MNU");
   refresh();
 }
 
@@ -533,26 +608,26 @@ void showReaderList(int cursor) {
   clearWhite();
   int total = articleCount();
 
-  drawStr(16, 11, "reader", 1, BLACK);
+  drawStrMono(16, 11, ">_ READER", 1, BLACK);
   drawBatteryMicroBadge(154, 11, readBatteryPercent(), BLACK);
 
   char countStr[16];
   if (total > 0) {
-    snprintf(countStr, sizeof(countStr), "%d/%d", cursor + 1, total);
+    snprintf(countStr, sizeof(countStr), "[%d/%d]", cursor + 1, total);
   } else {
-    snprintf(countStr, sizeof(countStr), "0/0");
+    snprintf(countStr, sizeof(countStr), "[0/0]");
   }
-  int cw = textW(countStr, 1);
-  drawStr(146 - cw, 11, countStr, 1, BLACK);
+  int cw = textMonoW(countStr, 1);
+  drawStrMono(146 - cw, 11, countStr, 1, BLACK);
 
   hline(16, 24, W - 32, BLACK);
 
   if (total == 0) {
     iconThinking(100, 75);
-    drawStrC(100, 110, "No articles", 1, BLACK);
+    drawStrMonoC(100, 110, "NO ARTICLES", 1, BLACK);
     drawStrC(100, 126, "Push articles from", 1, BLACK);
     drawStrC(100, 138, "the mobile app!", 1, BLACK);
-    drawFooterNav("back", "menu", "standby");
+    drawFooterNav("NXT", "SEL", "MNU");
     refresh();
     return;
   }
@@ -569,9 +644,9 @@ void showReaderList(int cursor) {
     uint8_t col = active ? WHITE : BLACK;
 
     if (active) {
-      fillRoundRect(16, y, 168, itemH, 5, BLACK);
+      fillRect(16, y, 168, itemH, BLACK);
     } else {
-      strokeRoundRect(16, y, 168, itemH, 5, 1, BLACK);
+      strokeRect(16, y, 168, itemH, 1, BLACK);
     }
 
     // Source badge / prefix
@@ -579,23 +654,23 @@ void showReaderList(int cursor) {
     if (src.length() > 6) src = src.substring(0, 6);
     char srcTag[12];
     snprintf(srcTag, sizeof(srcTag), "[%s]", src.c_str());
-    drawStr(active ? 20 : 20, y + 5, srcTag, 1, col);
+    drawStrMono(20, y + 6, srcTag, 1, col);
 
     // Title (fitted)
-    int tagWidth = textW(srcTag, 1) + 4;
+    int tagWidth = textMonoW(srcTag, 1) + 4;
     int maxTitleWidth = 168 - tagWidth - 28;
     String cleanTitle = articleIndex[idx].title;
-    drawStrFit(20 + tagWidth, y + 5, maxTitleWidth, cleanTitle.c_str(), 1, col);
+    drawStrFit(20 + tagWidth, y + 6, maxTitleWidth, cleanTitle.c_str(), 1, col);
 
     // Unread / Read indicator badge
     if (!articleIndex[idx].isRead) {
-      drawStr(W - 36, y + 5, "new", 1, col);
+      drawStrMono(W - 36, y + 6, "NEW", 1, col);
     } else {
-      drawStr(W - 36, y + 5, "ok", 1, col);
+      drawStrMono(W - 36, y + 6, "OK", 1, col);
     }
   }
 
-  drawFooterNav("next", "read", "menu");
+  drawFooterNav("NXT", "RED", "MNU");
   refresh();
 }
 
@@ -626,16 +701,16 @@ void showReaderArticle(int cursor, int pageIndex) {
 void showReaderDeleteConfirm(int articleNum, const char* title) {
   clearWhite();
   fillRect(0, 0, W, 26, BLACK);
-  drawStrC(W/2, 8, "DELETE ARTICLE", 1, WHITE);
+  drawStrMonoC(W/2, 6, "DELETE ARTICLE", 1, WHITE);
 
   char label[16];
   snprintf(label, sizeof(label), "#%03d", articleNum);
-  drawStrC(W/2, 44, label, 2, BLACK);
+  drawStrMonoC(W/2, 44, label, 2, BLACK);
 
   drawStrFit(16, 75, W - 32, title, 1, BLACK);
-  drawStrC(W/2, 105, "Remove from Reader?", 1, BLACK);
+  drawStrMonoC(W/2, 105, "Remove from Reader?", 1, BLACK);
 
-  drawFooterNav("cancel", "delete", "cancel");
+  drawFooterNav("CAN", "DEL", "BCK");
   refresh();
 }
 
@@ -643,7 +718,7 @@ void showNoteActions(int cursor, int actionCursor) {
   clearWhite();
   int idx = noteAtFilteredIndex(cursor);
   if (idx < 0) {
-    drawStrC(100, 96, "not found", 1, BLACK);
+    drawStrMonoC(100, 96, "NOT FOUND", 1, BLACK);
     refresh();
     return;
   }
@@ -652,8 +727,8 @@ void showNoteActions(int cursor, int actionCursor) {
   bool isSynced = noteIndex[idx].uploaded;
   bool hasText  = noteIndex[idx].hasText;
 
-  char n[24]; snprintf(n, sizeof(n), "#%03d  %s", num, noteIndex[idx].tag);
-  drawStr(16, 12, n, 1, BLACK);
+  char n[28]; snprintf(n, sizeof(n), "#%03d [%s]", num, noteIndex[idx].tag);
+  drawStrMono(16, 11, n, 1, BLACK);
   drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
   hline(16, 26, W - 32, BLACK);
 
@@ -666,30 +741,32 @@ void showNoteActions(int cursor, int actionCursor) {
     uint8_t col = active ? WHITE : BLACK;
 
     if (active) {
-      fillRoundRect(16, y, 168, itemH, 4, BLACK);
+      fillRect(16, y, 168, itemH, BLACK);
+    } else {
+      strokeRect(16, y, 168, itemH, 1, BLACK);
     }
 
     drawStr(active ? 22 : 18, y + 5, actionNames[i], 1, col);
 
     if (i == 0) {
       if (hasText || isSynced) {
-        drawStr(W - 48, y + 5, "ready", 1, col);
+        drawStrMono(W - 48, y + 5, "READY", 1, col);
       } else {
-        drawStr(W - 48, y + 5, "sync>", 1, col);
+        drawStrMono(W - 48, y + 5, "SYNC>", 1, col);
       }
     } else if (i == 1) {
       float dur = noteAudioDurationSec(num);
       char durStr[12]; snprintf(durStr, sizeof(durStr), "%.1fs", dur);
-      int dw = textW(durStr, 1);
-      drawStr(W - 20 - dw, y + 5, durStr, 1, col);
+      int dw = textMonoW(durStr, 1);
+      drawStrMono(W - 20 - dw, y + 5, durStr, 1, col);
     } else if (i == 2) {
-      drawStr(W - 28, y + 5, ">", 1, col);
+      drawStrMono(W - 28, y + 5, ">", 1, col);
     } else if (i == 3) {
-      drawStr(W - 38, y + 5, "del", 1, col);
+      drawStrMono(W - 38, y + 5, "DEL", 1, col);
     }
   }
 
-  drawFooterNav("next", "select", "list");
+  drawFooterNav("NXT", "SEL", "LST");
   refresh();
 }
 
@@ -738,21 +815,21 @@ void showNoteDetail(int cursor) {
     drawStr(18, 70, "sync: not synced (pending)", 1, BLACK);
   }
 
-  fillRoundRect(16, 88, 168, 68, 4, WHITE);
-  strokeRoundRect(16, 88, 168, 68, 4, 1, BLACK);
+  fillRect(16, 88, 168, 68, WHITE);
+  strokeRect(16, 88, 168, 68, 1, BLACK);
 
   if (isSynced || hasText) {
-    drawStr(22, 94, "Transcript (Markdown):", 1, BLACK);
+    drawStrMono(22, 94, "Transcript (Markdown):", 1, BLACK);
     String preview = notePreviewText(num, 60);
     if (preview.length() == 0) preview = "Text available on SD card.";
     drawStrFit(22, 110, 156, preview.c_str(), 1, BLACK);
-    drawStr(22, 134, "Status: Ready to read", 1, BLACK);
+    drawStrMono(22, 134, "Status: Ready to read", 1, BLACK);
   } else {
     iconThinking(100, 110);
-    drawStrC(100, 130, "Audio only (sync for text)", 1, BLACK);
+    drawStrMonoC(100, 130, "Audio only (sync for text)", 1, BLACK);
   }
 
-  drawFooterNav("back", "back", "list");
+  drawFooterNav("DWN", "RED", "ACT");
   refresh();
 }
 
@@ -775,29 +852,25 @@ void showNoteMdReader(int cursor, int pageIndex) {
 void showDeleteConfirm(int noteNum) {
   clearWhite();
   fillRect(0, 0, W, 26, BLACK);
-  drawStrC(W/2, 8, "DELETE", 1, WHITE);
+  drawStrMonoC(W/2, 6, "DELETE NOTE", 1, WHITE);
   char label[16]; snprintf(label, sizeof(label), "#%03d", noteNum);
-  drawStrC(W/2, 48, label, 2, BLACK);
-  drawStrC(W/2, 80, "Delete this note?", 1, BLACK);
-  drawStrC(W/2, 104, "WAV + TXT + meta", 1, BLACK);
+  drawStrMonoC(W/2, 48, label, 2, BLACK);
+  drawStrMonoC(W/2, 80, "Delete this note?", 1, BLACK);
+  drawStrMonoC(W/2, 104, "WAV + TXT + META", 1, BLACK);
 
-  drawFooterNav("cancel", "confirm", "cancel");
+  drawFooterNav("CAN", "DEL", "BCK");
   refresh();
 }
 
 void showSyncConfirm(int noteNum) {
   clearWhite();
-  fillRect(0, 0, W, 28, BLACK);
-  drawStrC(W/2, 10, "SYNC", 1, WHITE);
+  fillRect(0, 0, W, 26, BLACK);
+  drawStrMonoC(W/2, 6, "SYNC NOTES", 1, WHITE);
   char label[16]; snprintf(label, sizeof(label), "#%03d", noteNum);
-  drawStrC(W/2, 52, label, 2, BLACK);
-  drawStrC(W/2, 88, "Sync notes now?", 1, BLACK);
-  drawStrC(W/2, 108, "transcribe + upload", 1, BLACK);
-  hline(0, 179, W, BLACK);
-  fillRect(0, 180, W, 20, WHITE);
-  drawStr(8, 186, "sync", 1, BLACK);
-  int rw = textW("later", 1);
-  drawStr(W - 8 - rw, 186, "later", 1, BLACK);
+  drawStrMonoC(W/2, 48, label, 2, BLACK);
+  drawStrMonoC(W/2, 80, "Sync notes now?", 1, BLACK);
+  drawStrMonoC(W/2, 104, "transcribe + upload", 1, BLACK);
+  drawFooterNav("LAT", "SYN", "BCK");
   refresh();
 }
 
@@ -938,29 +1011,129 @@ void showTransferMode(const char* ip) {
   refresh();
 }
 
-void showSyncMode(const char* ssid, const char* ip, int pending) {
+void showSyncSelect(int cursor) {
   clearWhite();
-  drawKicker("sync mode", 14);
-  fillRoundRect(16, 38, 168, 64, 12, BLACK);
-  drawStrInBox(16, 44, 168, 20, ssid, 1, WHITE);
-  drawStrInBox(16, 68, 168, 20, ip, 1, WHITE);
+  drawStrMono(16, 11, ">_ SYNC", 1, BLACK);
+  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
+  hline(16, 26, W - 32, BLACK);
 
-  if (pending > 0) {
-    char b[32];
-    snprintf(b, sizeof(b), "%d pending note%s", pending, pending == 1 ? "" : "s");
-    drawStrC(100, 118, b, 1, BLACK);
-  } else {
-    drawStrC(100, 118, "all notes synced", 1, BLACK);
+  const char* syncOptions[2] = { "BLE", "WI-FI" };
+  const int y0 = 42, step = 38, itemH = 28;
+
+  for (int i = 0; i < 2; i++) {
+    bool active = (i == cursor);
+    int y = y0 + i * step;
+    if (active) fillRect(24, y, 152, itemH, BLACK);
+    else        strokeRect(24, y, 152, itemH, 1, BLACK);
+    uint8_t col = active ? WHITE : BLACK;
+    drawStrMonoC(100, y + 9, syncOptions[i], 1, col);
   }
 
-  drawStrC(100, 142, "connect app or browser", 1, BLACK);
-  drawStrC(100, 170, "double rec to exit", 1, BLACK);
+  // Stima dati da sincronizzare sotto le opzioni
+  int pending = pendingSyncCount();
+  size_t bytes = pendingSyncBytes();
+  char estBuf[48];
+  if (pending == 1) {
+    snprintf(estBuf, sizeof(estBuf), "1 Note (%u KB) to sync", (unsigned int)(bytes / 1024));
+  } else if (pending > 1) {
+    snprintf(estBuf, sizeof(estBuf), "%d Notes (%u KB) to sync", pending, (unsigned int)(bytes / 1024));
+  } else {
+    snprintf(estBuf, sizeof(estBuf), "0 Notes (0 KB) to sync");
+  }
+  drawStrMonoC(100, 140, estBuf, 1, BLACK);
+
+  drawFooterNav("NXT", "SEL", "MNU");
+  refresh();
+}
+
+void showSyncMode(const char* ssid, const char* ip, int pending) {
+  clearWhite();
+  drawStrMono(16, 11, ">_ SYNC [WI-FI]", 1, BLACK);
+  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
+  hline(16, 26, W - 32, BLACK);
+
+  fillRect(16, 38, 168, 56, BLACK);
+  drawStrMonoC(100, 48, ssid, 1, WHITE);
+  drawStrMonoC(100, 70, ip, 1, WHITE);
+
+  size_t bytes = pendingSyncBytes();
+  char b[48];
+  if (pending > 0) {
+    snprintf(b, sizeof(b), "%d pending (%u KB)", pending, (unsigned int)(bytes / 1024));
+  } else {
+    snprintf(b, sizeof(b), "All notes synced");
+  }
+  drawStrMonoC(100, 114, b, 1, BLACK);
+  drawStrMonoC(100, 138, "Waiting Companion...", 1, BLACK);
+
+  drawFooterNav("", "", "CAN");
+  refresh();
+}
+
+void showSyncBleMode(const char* bleName, int pending) {
+  clearWhite();
+  drawStrMono(16, 11, ">_ SYNC [BLE]", 1, BLACK);
+  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
+  hline(16, 26, W - 32, BLACK);
+
+  fillRect(16, 38, 168, 56, BLACK);
+  drawStrMonoC(100, 48, "BLUETOOTH ACTIVE", 1, WHITE);
+  drawStrMonoC(100, 70, bleName, 1, WHITE);
+
+  size_t bytes = pendingSyncBytes();
+  char b[48];
+  if (pending > 0) {
+    snprintf(b, sizeof(b), "%d pending (%u KB)", pending, (unsigned int)(bytes / 1024));
+  } else {
+    snprintf(b, sizeof(b), "All notes synced");
+  }
+  drawStrMonoC(100, 114, b, 1, BLACK);
+  drawStrMonoC(100, 138, "Waiting Companion...", 1, BLACK);
+
+  drawFooterNav("", "", "CAN");
+  refresh();
+}
+
+void showSyncProgress(const char* proto, const char* statusMsg, int currentItem, int totalItems, int progressPct) {
+  clearWhite();
+  char titleBuf[32];
+  snprintf(titleBuf, sizeof(titleBuf), ">_ SYNC [%s]", proto);
+  drawStrMono(16, 11, titleBuf, 1, BLACK);
+  drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
+  hline(16, 26, W - 32, BLACK);
+
+  if (totalItems > 0 && currentItem > 0) {
+    char itemBuf[32];
+    snprintf(itemBuf, sizeof(itemBuf), "Item %02d/%02d", currentItem, totalItems);
+    drawStrMono(20, 42, itemBuf, 1, BLACK);
+  } else {
+    drawStrMono(20, 42, "In progress...", 1, BLACK);
+  }
+
+  if (statusMsg && strlen(statusMsg) > 0) {
+    drawStrFit(20, 62, 160, statusMsg, 1, BLACK);
+  }
+
+  // Sharp Progress Bar
+  progressPct = constrain(progressPct, 0, 100);
+  const int barX = 20, barY = 90, barW = 160, barH = 18;
+  strokeRect(barX, barY, barW, barH, 1, BLACK);
+  int fillW = ((barW - 4) * progressPct) / 100;
+  if (fillW > 0) {
+    fillRect(barX + 2, barY + 2, fillW, barH - 4, BLACK);
+  }
+
+  char pctBuf[16];
+  snprintf(pctBuf, sizeof(pctBuf), "%d%%", progressPct);
+  drawStrMonoC(100, 122, pctBuf, 1, BLACK);
+
+  drawFooterNav("", "", "CAN");
   refresh();
 }
 
 void showSettings(int cursor) {
   clearWhite();
-  drawStr(16, 12, "settings", 1, BLACK);
+  drawStrMono(16, 11, ">_ SETTINGS", 1, BLACK);
   drawBatteryMicroBadge(154, 12, readBatteryPercent(), BLACK);
   hline(16, 26, W-32, BLACK);
 
@@ -971,41 +1144,43 @@ void showSettings(int cursor) {
     uint8_t col = active ? WHITE : BLACK;
 
     if (active) {
-      fillRoundRect(16, y, 168, itemH, 5, BLACK);
+      fillRect(16, y, 168, itemH, BLACK);
+    } else {
+      strokeRect(16, y, 168, itemH, 1, BLACK);
     }
 
     if (row == 0) {
       drawStr(active ? 22 : 18, y + 5, "sounds", 1, col);
-      drawStr(W - 48, y + 5, palaSoundIsEnabled() ? "on" : "off", 1, col);
+      drawStrMono(W - 48, y + 5, palaSoundIsEnabled() ? "ON" : "OFF", 1, col);
     } else if (row == 1) {
       drawStr(active ? 22 : 18, y + 5, "clean synced", 1, col);
       char b[12];
       snprintf(b, sizeof(b), "%d ready", syncedNotesCount());
-      int bw = textW(b, 1);
-      drawStr(W - 22 - bw, y + 5, b, 1, col);
+      int bw = textMonoW(b, 1);
+      drawStrMono(W - 22 - bw, y + 5, b, 1, col);
     } else if (row == 2) {
       drawStr(active ? 22 : 18, y + 5, "wi-fi", 1, col);
       char b[10];
       if (palaHasSecondNet()) snprintf(b, sizeof(b), "net %d", palaActiveNet() + 1);
       else                    snprintf(b, sizeof(b), "net 1");
-      int bw = textW(b, 1);
-      drawStr(W - 22 - bw, y + 5, b, 1, col);
+      int bw = textMonoW(b, 1);
+      drawStrMono(W - 22 - bw, y + 5, b, 1, col);
     } else if (row == 3) {
       drawStr(active ? 22 : 18, y + 5, "transfer", 1, col);
-      drawStr(W - 68, y + 5, "sd-mmc", 1, col);
+      drawStrMono(W - 68, y + 5, "SD-MMC", 1, col);
     } else {
       drawStr(active ? 22 : 18, y + 5, "device", 1, col);
-      drawStr(W - 58, y + 5, "info >", 1, col);
+      drawStrMono(W - 58, y + 5, "INFO >", 1, col);
     }
   }
 
-  drawFooterNav("next", "toggle", "menu");
+  drawFooterNav("NXT", "TOG", "MNU");
   refresh();
 }
 
 void showDeviceInfo() {
   clearWhite();
-  drawStr(16, 12, "device", 1, BLACK);
+  drawStrMono(16, 11, ">_ DEVICE", 1, BLACK);
   int batt = readBatteryPercent();
   float vbat = readBatteryVoltage();
   drawBatteryMicroBadge(154, 12, batt, BLACK);
@@ -1013,25 +1188,27 @@ void showDeviceInfo() {
 
   char fwBuf[40];
   snprintf(fwBuf, sizeof(fwBuf), "firmware: %s", FIRMWARE_VERSION);
-  drawStrFit(18, 34, 164, fwBuf, 1, BLACK);
+  drawStrMono(18, 34, fwBuf, 1, BLACK);
 
   char batBuf[40];
   snprintf(batBuf, sizeof(batBuf), "battery: %d%% (%.2fV)", batt, vbat);
-  drawStrFit(18, 52, 164, batBuf, 1, BLACK);
+  drawStrMono(18, 52, batBuf, 1, BLACK);
 
   String runtime = estimateBatteryRuntime(batt, vbat);
   char runBuf[40];
   snprintf(runBuf, sizeof(runBuf), "runtime: %s", runtime.c_str());
-  drawStrFit(18, 70, 164, runBuf, 1, BLACK);
-
-  drawStrFit(18, 88, 164, "board: ESP32-S3 ePaper", 1, BLACK);
+  drawStrMono(18, 70, runBuf, 1, BLACK);
 
   char b[32]; snprintf(b, sizeof(b), "notes: %d stored", (int)noteIndex.size());
-  drawStr(18, 106, b, 1, BLACK);
+  drawStrMono(18, 88, b, 1, BLACK);
 
-  drawStr(18, 124, palaSoundIsEnabled() ? "sounds: on" : "sounds: off", 1, BLACK);
-  drawStr(18, 142, rtcUtcIso().length() ? "rtc: synchronized" : "rtc: local time", 1, BLACK);
+  char ramBuf[40];
+  snprintf(ramBuf, sizeof(ramBuf), "free ram: %u KB", (unsigned int)(esp_get_free_heap_size() / 1024));
+  drawStrMono(18, 106, ramBuf, 1, BLACK);
 
-  drawFooterNav("back", "back", "settings");
+  drawStrMono(18, 124, palaSoundIsEnabled() ? "sounds: on" : "sounds: off", 1, BLACK);
+  drawStrMono(18, 142, rtcUtcIso().length() ? "rtc: synchronized" : "rtc: local time", 1, BLACK);
+
+  drawFooterNav("DWN", "OK ", "SET");
   refresh();
 }

@@ -36,15 +36,18 @@ void drawBigStrC(int cx, int y, int h, const char* s, uint8_t c);
 int  fontIdx(char c);
 void drawCharLegacy(int x, int y, char c, int scale, uint8_t color);
 
-const GFXfont* uiFontForScale(int scale);
-int            uiFontHeight(int scale);
-void           textBoundsFont(const char* s, int scale, int* minX, int* minY, int* maxX, int* maxY, int* advOut = nullptr);
-int            textW(const char* s, int scale);
+const GFXfont* uiFontForScale(int scale, bool mono = false);
+int            uiFontHeight(int scale, bool mono = false);
+void           textBoundsFont(const char* s, int scale, int* minX, int* minY, int* maxX, int* maxY, int* advOut = nullptr, bool mono = false);
+int            textW(const char* s, int scale, bool mono = false);
+int            textMonoW(const char* s, int scale);
 void           drawGlyphFont(int x, int baseline, char ch, const GFXfont* font, uint8_t color, int* adv);
-void           drawStr(int x, int y, const char* s, int scale, uint8_t color);
-void           drawStrC(int cx, int y, const char* s, int scale, uint8_t color);
-void           drawStrFit(int x, int y, int maxW, const char* s, int scale, uint8_t color);
-void           drawStrInBox(int x, int y, int w, int h, const char* s, int scale, uint8_t color);
+void           drawStr(int x, int y, const char* s, int scale, uint8_t color, bool mono = false);
+void           drawStrC(int cx, int y, const char* s, int scale, uint8_t color, bool mono = false);
+void           drawStrMono(int x, int y, const char* s, int scale, uint8_t color);
+void           drawStrMonoC(int cx, int y, const char* s, int scale, uint8_t color);
+void           drawStrFit(int x, int y, int maxW, const char* s, int scale, uint8_t color, bool mono = false);
+void           drawStrInBox(int x, int y, int w, int h, const char* s, int scale, uint8_t color, bool mono = false);
 
 void uppercaseCopy(char* dst, const char* src, int maxLen);
 

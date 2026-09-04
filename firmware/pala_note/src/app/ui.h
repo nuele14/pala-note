@@ -30,6 +30,7 @@ void drawMinimalTagIcon(int cx, int cy, uint8_t color);
 void drawMinimalCloudIcon(int cx, int cy, uint8_t color);
 void drawIconPower(int x, int y, uint8_t color);
 void drawIconTriangle(int x, int y, uint8_t color);
+void drawIconHoldBack(int x, int y, uint8_t color);
 void drawFooterNav(const char* pwrAction, const char* actAction, const char* holdAction = nullptr);
 
 // Screens
@@ -61,5 +62,8 @@ void showPlaybackOverlay();
 void showTransferConnecting();
 void showTransferMode(const char* ip);
 void showSyncMode(const char* ssid, const char* ip, int pending);
+void showSyncSelect(int cursor);
+void showSyncBleMode(const char* bleName, int pending);
+void showSyncProgress(const char* proto, const char* statusMsg, int currentItem, int totalItems, int progressPct);
 void showSettings(int cursor);
 void showDeviceInfo();
