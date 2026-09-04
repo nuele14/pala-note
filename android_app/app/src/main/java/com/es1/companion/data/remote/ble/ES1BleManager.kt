@@ -192,23 +192,18 @@ class ES1BleManager(private val context: Context) {
                         cmdCharacteristic = service.getCharacteristic(CHAR_CMD_UUID)
                         dataCharacteristic = service.getCharacteristic(CHAR_DATA_UUID)
 
-                        // Enable notifications on Command characteristic
+                        // 1. Enable notifications on Command characteristic first
                         cmdCharacteristic?.let { cmdChar ->
                             gatt.setCharacteristicNotification(cmdChar, true)
                             val desc = cmdChar.getDescriptor(CCCD_UUID)
                             if (desc != null) {
                                 desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                gatt.writeDescriptor(desc)
+                                val ok = gatt.writeDescriptor(desc)
+                                Log.d(TAG, "Writing CMD CCCD descriptor: $ok")
+                            } else {
+                                enableDataCccd(gatt)
                             }
-                        }
-
-                        // Enable notifications on Data characteristic
-                        dataCharacteristic?.let { dataChar ->
-                            gatt.setCharacteristicNotification(dataChar, true)
-                        }
-
-                        Log.d(TAG, "ES1 Services and Characteristics successfully discovered!")
-                        connectDeferred.complete(true)
+                        } ?: enableDataCccd(gatt)
                     } else {
                         Log.e(TAG, "ES1 Service UUID not found in device!")
                         connectDeferred.complete(false)
@@ -219,15 +214,61 @@ class ES1BleManager(private val context: Context) {
                 }
             }
 
+            private fun enableDataCccd(gatt: BluetoothGatt) {
+                dataCharacteristic?.let { dataChar ->
+                    gatt.setCharacteristicNotification(dataChar, true)
+                    val desc = dataChar.getDescriptor(CCCD_UUID)
+                    if (desc != null) {
+                        desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        val ok = gatt.writeDescriptor(desc)
+                        Log.d(TAG, "Writing DATA CCCD descriptor: $ok")
+                    } else {
+                        Log.d(TAG, "ES1 Services & Characteristics ready (no data CCCD)!")
+                        connectDeferred.complete(true)
+                    }
+                } ?: run {
+                    Log.d(TAG, "ES1 Services & Characteristics ready!")
+                    connectDeferred.complete(true)
+                }
+            }
+
+            override fun onDescriptorWrite(
+                gatt: BluetoothGatt,
+                descriptor: BluetoothGattDescriptor,
+                status: Int
+            ) {
+                val charUuid = descriptor.characteristic.uuid
+                Log.d(TAG, "onDescriptorWrite for char $charUuid (status=$status)")
+                if (charUuid == CHAR_CMD_UUID) {
+                    enableDataCccd(gatt)
+                } else if (charUuid == CHAR_DATA_UUID) {
+                    Log.d(TAG, "DATA CCCD enabled! ES1 BLE is ready for high-speed streaming.")
+                    connectDeferred.complete(true)
+                }
+            }
+
+            @Deprecated("Deprecated in Java")
             override fun onCharacteristicChanged(
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic
             ) {
-                val value = characteristic.value ?: return
-                if (characteristic.uuid == CHAR_CMD_UUID) {
-                    val jsonStr = String(value)
+                handleIncomingNotification(characteristic.uuid, characteristic.value ?: ByteArray(0))
+            }
+
+            override fun onCharacteristicChanged(
+                gatt: BluetoothGatt,
+                characteristic: BluetoothGattCharacteristic,
+                value: ByteArray
+            ) {
+                handleIncomingNotification(characteristic.uuid, value)
+            }
+
+            private fun handleIncomingNotification(uuid: UUID, value: ByteArray) {
+                if (uuid == CHAR_CMD_UUID) {
+                    val jsonStr = String(value, Charsets.UTF_8)
+                    Log.d(TAG, "[BLE CMD RX] $jsonStr")
                     cmdNotificationChannel.trySend(jsonStr)
-                } else if (characteristic.uuid == CHAR_DATA_UUID) {
+                } else if (uuid == CHAR_DATA_UUID) {
                     onDataChunkReceived?.invoke(value)
                 }
             }
@@ -333,6 +374,7 @@ class ES1BleManager(private val context: Context) {
         var fos: FileOutputStream? = null
         var totalExpectedBytes = 0L
         var bytesWritten = 0L
+        var lastChunkTime = System.currentTimeMillis()
 
         try {
             fos = FileOutputStream(targetFile)
@@ -342,6 +384,7 @@ class ES1BleManager(private val context: Context) {
                     fos?.write(chunk)
                     sha256Digest.update(chunk)
                     bytesWritten += chunk.size
+                    lastChunkTime = System.currentTimeMillis()
                     onProgress(bytesWritten, totalExpectedBytes)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error writing audio chunk: ${e.message}", e)
@@ -351,22 +394,53 @@ class ES1BleManager(private val context: Context) {
             // Send command to initiate note stream
             sendCmd("{\"cmd\":\"GET_NOTE\",\"num\":$noteNum}")
 
-            // Read responses on CMD channel
-            while (true) {
-                val resp = awaitCmdResponse(12000) ?: break
-                val json = JSONObject(resp)
-                val type = json.optString("type")
+            // 1. Wait for NOTE_START first
+            val startResp = awaitCmdResponse(8000)
+            if (startResp != null) {
+                try {
+                    val startJson = JSONObject(startResp)
+                    if (startJson.optString("type") == "NOTE_START") {
+                        totalExpectedBytes = startJson.optLong("size", 0L)
+                        Log.d(TAG, "Note #$noteNum stream starting, expecting $totalExpectedBytes bytes...")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not parse start response: $startResp")
+                }
+            }
 
-                if (type == "NOTE_START") {
-                    totalExpectedBytes = json.optLong("size", 0L)
-                    Log.d(TAG, "Note #$noteNum stream starting, expecting $totalExpectedBytes bytes...")
-                } else if (type == "NOTE_END" || type == "NOTE_DONE") {
-                    Log.d(TAG, "Note #$noteNum stream finished: $bytesWritten bytes written.")
+            lastChunkTime = System.currentTimeMillis()
+
+            // 2. Loop receiving chunks and watching for NOTE_END or inactivity
+            while (true) {
+                val resp = awaitCmdResponse(300)
+                if (resp != null) {
+                    try {
+                        val json = JSONObject(resp)
+                        val type = json.optString("type")
+                        if (type == "NOTE_END" || type == "NOTE_DONE") {
+                            Log.d(TAG, "Note #$noteNum NOTE_END received: $bytesWritten bytes written.")
+                            doneDeferred.complete(true)
+                            break
+                        } else if (type == "ERROR") {
+                            Log.e(TAG, "Device reported error: ${json.optString("msg")}")
+                            doneDeferred.complete(false)
+                            break
+                        }
+                    } catch (ignored: Exception) {}
+                }
+
+                // If all expected bytes are already received, wait briefly for NOTE_END
+                if (totalExpectedBytes > 0 && bytesWritten >= totalExpectedBytes) {
+                    Log.d(TAG, "All $totalExpectedBytes bytes received for note #$noteNum. Awaiting NOTE_END...")
+                    val finalResp = awaitCmdResponse(3000)
                     doneDeferred.complete(true)
                     break
-                } else if (type == "ERROR") {
-                    Log.e(TAG, "Device reported error: ${json.optString("msg")}")
-                    doneDeferred.complete(false)
+                }
+
+                // Inactivity timeout: if no chunk received for 8 seconds, abort
+                if (System.currentTimeMillis() - lastChunkTime > 8000) {
+                    Log.w(TAG, "Inactivity timeout on note #$noteNum ($bytesWritten of $totalExpectedBytes bytes received)")
+                    doneDeferred.complete(bytesWritten > 0 && bytesWritten >= totalExpectedBytes)
                     break
                 }
             }
@@ -375,8 +449,10 @@ class ES1BleManager(private val context: Context) {
             doneDeferred.complete(false)
         } finally {
             onDataChunkReceived = null
-            fos?.flush()
-            fos?.close()
+            try {
+                fos?.flush()
+                fos?.close()
+            } catch (ignored: Exception) {}
         }
 
         val success = withTimeoutOrNull(2000) { doneDeferred.await() } ?: false

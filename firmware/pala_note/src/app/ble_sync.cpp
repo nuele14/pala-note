@@ -118,6 +118,10 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
             streamItemIdx++;
             if (streamTotalItems < streamItemIdx) streamTotalItems = streamItemIdx;
 
+            char msg[32];
+            snprintf(msg, sizeof(msg), "Note #%03d (%u KB)", n, (unsigned int)(streamFileSize / 1024));
+            showSyncProgress("BLE", msg, streamItemIdx, streamTotalItems, 0);
+
             String resp = "{\"type\":\"NOTE_START\",\"num\":" + String(n) +
                           ",\"size\":" + String(streamFileSize) + "}";
             sendCmdResponse(resp);
@@ -332,23 +336,16 @@ void handleBleSyncLoop() {
       pDataChar->setValue(chunk, readBytes);
       pDataChar->notify();
       streamBytesSent += readBytes;
-
-      // Update screen progress periodically
-      static uint32_t lastProgUpdate = 0;
-      if (millis() - lastProgUpdate > 600 || streamBytesSent >= streamFileSize) {
-        lastProgUpdate = millis();
-        int pct = (streamFileSize > 0) ? (int)((streamBytesSent * 100) / streamFileSize) : 100;
-        char msg[32];
-        snprintf(msg, sizeof(msg), "Note #%03d (%u KB)", streamNoteNum, (unsigned int)(streamFileSize / 1024));
-        showSyncProgress("BLE", msg, streamItemIdx, streamTotalItems, pct);
-      }
-      delay(4); // Small pacing to prevent buffer overflow on ESP32 BLE stack
+      delay(10); // 10ms pacing: ~48 KB/s smooth transmission without overflowing BLE buffers
     } else {
       // File finished
       streamFile.close();
       streamingNote = false;
       Serial.printf("[BLE] Note #%03d audio stream finished (%u bytes sent)\n",
                     streamNoteNum, (unsigned int)streamBytesSent);
+      char msg[32];
+      snprintf(msg, sizeof(msg), "Note #%03d (Sent)", streamNoteNum);
+      showSyncProgress("BLE", msg, streamItemIdx, streamTotalItems, 100);
       String endJson = "{\"type\":\"NOTE_END\",\"num\":" + String(streamNoteNum) + "}";
       sendCmdResponse(endJson);
     }
