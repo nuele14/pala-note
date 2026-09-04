@@ -41,6 +41,7 @@ fun SettingsScreen(
     onCleanDeviceMemory: () -> Unit,
     modelDownloadState: ModelDownloadState,
     onDownloadModel: () -> Unit,
+    onForceGlobalResync: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -469,6 +470,41 @@ fun SettingsScreen(
                     Icon(imageVector = Icons.Rounded.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Pulisci Memoria ES1 Sincronizzata", fontSize = 12.sp)
+                }
+            }
+        }
+
+        // 6. Global Resync Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(0.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "🔄 Risincronizzazione Globale ES1",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Forza il download di tutte le note presenti sulla scheda SD di ES1 (anche quelle già sincronizzate) e rigenera le elaborazioni AI.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = onForceGlobalResync,
+                    shape = RoundedCornerShape(0.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(imageVector = Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Forza Risincronizzazione Completa", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

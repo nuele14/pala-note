@@ -32,6 +32,8 @@ static size_t streamFileSize   = 0;
 static size_t streamBytesSent  = 0;
 static int    streamItemIdx    = 0;
 static int    streamTotalItems = 0;
+static int    lastDrawnPct     = 0;
+static unsigned long lastScreenUpdateMs = 0;
 
 // Article Receiving State (Companion -> ES1)
 static bool   receivingArticle  = false;
@@ -115,8 +117,23 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
             streamFileSize = streamFile.size();
             streamBytesSent = 0;
             streamingNote = true;
-            streamItemIdx++;
-            if (streamTotalItems < streamItemIdx) streamTotalItems = streamItemIdx;
+
+            int idxPos = rx.indexOf("\"idx\":");
+            if (idxPos >= 0) {
+              streamItemIdx = rx.substring(idxPos + 6).toInt();
+            } else {
+              streamItemIdx++;
+            }
+
+            int totPos = rx.indexOf("\"total\":");
+            if (totPos >= 0) {
+              streamTotalItems = rx.substring(totPos + 8).toInt();
+            } else if (streamTotalItems < streamItemIdx) {
+              streamTotalItems = streamItemIdx;
+            }
+
+            lastDrawnPct = 0;
+            lastScreenUpdateMs = millis();
 
             char msg[32];
             snprintf(msg, sizeof(msg), "Note #%03d (%u KB)", n, (unsigned int)(streamFileSize / 1024));
@@ -125,7 +142,8 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
             String resp = "{\"type\":\"NOTE_START\",\"num\":" + String(n) +
                           ",\"size\":" + String(streamFileSize) + "}";
             sendCmdResponse(resp);
-            Serial.printf("[BLE] Starting note #%03d audio stream (%u bytes)\n", n, (unsigned int)streamFileSize);
+            Serial.printf("[BLE] Starting note #%03d audio stream (%u bytes) [%d/%d]\n",
+                          n, (unsigned int)streamFileSize, streamItemIdx, streamTotalItems);
             return;
           }
         }
@@ -223,8 +241,15 @@ class DataCallbacks : public BLECharacteristicCallbacks {
       if (len > 0) {
         articleFile.write(pData, len);
         articleBytesRx += len;
-        int pct = (articleTargetSize > 0) ? (int)((articleBytesRx * 100) / articleTargetSize) : 50;
-        showSyncProgress("BLE", articleTitle.c_str(), 1, 1, pct);
+        if (articleTargetSize > 0) {
+          int pct = (int)((articleBytesRx * 100) / articleTargetSize);
+          int milestone = (pct / 25) * 25;
+          if (milestone > lastDrawnPct && milestone < 100 && (millis() - lastScreenUpdateMs >= 1200)) {
+            lastDrawnPct = milestone;
+            lastScreenUpdateMs = millis();
+            showSyncProgress("BLE", articleTitle.c_str(), 1, 1, milestone);
+          }
+        }
       }
     }
   }
@@ -237,7 +262,10 @@ void startBleSync() {
   streamingNote = false;
   receivingArticle = false;
   streamItemIdx = 0;
-  streamTotalItems = pendingSyncCount();
+  int pending = pendingSyncCount();
+  streamTotalItems = (pending > 0) ? pending : (int)noteIndex.size();
+  lastDrawnPct = 0;
+  lastScreenUpdateMs = 0;
 
   String devName = getSoftApSsid();
   BLEDevice::init(devName.c_str());
@@ -337,6 +365,18 @@ void handleBleSyncLoop() {
       pDataChar->notify();
       streamBytesSent += readBytes;
       delay(10); // 10ms pacing: ~48 KB/s smooth transmission without overflowing BLE buffers
+
+      if (streamFileSize > 0) {
+        int pct = (int)((streamBytesSent * 100) / streamFileSize);
+        int milestone = (pct / 25) * 25;
+        if (milestone > lastDrawnPct && milestone < 100 && (millis() - lastScreenUpdateMs >= 1200)) {
+          lastDrawnPct = milestone;
+          lastScreenUpdateMs = millis();
+          char msg[32];
+          snprintf(msg, sizeof(msg), "Note #%03d (%u KB)", streamNoteNum, (unsigned int)(streamFileSize / 1024));
+          showSyncProgress("BLE", msg, streamItemIdx, streamTotalItems, milestone);
+        }
+      }
     } else {
       // File finished
       streamFile.close();
@@ -346,6 +386,9 @@ void handleBleSyncLoop() {
       char msg[32];
       snprintf(msg, sizeof(msg), "Note #%03d (Sent)", streamNoteNum);
       showSyncProgress("BLE", msg, streamItemIdx, streamTotalItems, 100);
+      lastDrawnPct = 100;
+      lastScreenUpdateMs = millis();
+      delay(150);
       String endJson = "{\"type\":\"NOTE_END\",\"num\":" + String(streamNoteNum) + "}";
       sendCmdResponse(endJson);
     }

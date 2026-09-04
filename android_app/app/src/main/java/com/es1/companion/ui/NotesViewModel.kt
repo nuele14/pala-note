@@ -226,9 +226,14 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         _selectedNote.value = null
     }
 
-    fun openSyncDialog() {
+    fun openSyncDialog(forceResyncAll: Boolean = false) {
         _showSyncDialog.value = true
-        startSync()
+        startSync(forceResyncAll = forceResyncAll)
+    }
+
+    fun forceGlobalResync() {
+        _showSyncDialog.value = true
+        startSync(forceResyncAll = true)
     }
 
     fun closeSyncDialog() {
@@ -251,11 +256,9 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-
-
-    fun startSync(targetBleMac: String? = null) {
+    fun startSync(targetBleMac: String? = null, forceResyncAll: Boolean = false) {
         viewModelScope.launch {
-            val syncResult = syncManager.performSync(targetBleMac = targetBleMac) { deviceId ->
+            val syncResult = syncManager.performSync(targetBleMac = targetBleMac, forceResyncAll = forceResyncAll) { deviceId ->
                 rssManager.pushAllQueuedArticles(deviceId = deviceId)
             }
             if (syncResult.success) {

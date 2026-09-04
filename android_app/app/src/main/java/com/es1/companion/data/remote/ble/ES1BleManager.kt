@@ -367,6 +367,8 @@ class ES1BleManager(private val context: Context) {
     suspend fun downloadNoteAudio(
         noteNum: Int,
         targetFile: File,
+        itemIdx: Int = 0,
+        totalItems: Int = 0,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         val doneDeferred = CompletableDeferred<Boolean>()
@@ -392,7 +394,12 @@ class ES1BleManager(private val context: Context) {
             }
 
             // Send command to initiate note stream
-            sendCmd("{\"cmd\":\"GET_NOTE\",\"num\":$noteNum}")
+            val getCmd = if (itemIdx > 0 && totalItems > 0) {
+                "{\"cmd\":\"GET_NOTE\",\"num\":$noteNum,\"idx\":$itemIdx,\"total\":$totalItems}"
+            } else {
+                "{\"cmd\":\"GET_NOTE\",\"num\":$noteNum}"
+            }
+            sendCmd(getCmd)
 
             // 1. Wait for NOTE_START first
             val startResp = awaitCmdResponse(8000)

@@ -20,6 +20,8 @@ import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeviceUnknown
 import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +48,7 @@ import com.es1.companion.data.remote.ble.BleDeviceItem
 fun SyncModalDialog(
     syncState: SyncState,
     onSelectBleDevice: ((BleDeviceItem) -> Unit)? = null,
+    onForceResync: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val isBle = when (syncState) {
@@ -244,31 +247,50 @@ fun SyncModalDialog(
                     }
 
                     is SyncState.Success -> {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF66BB6A),
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Text(
-                                text = buildString {
-                                    if (syncState.downloadedCount > 0) {
-                                        append("✓ Sincronizzate ${syncState.downloadedCount} note!\n")
-                                    }
-                                    if (syncState.uploadedArticlesCount > 0) {
-                                        append("✓ ${syncState.uploadedArticlesCount} articoli inviati al Reader!\n")
-                                    }
-                                    if (isEmpty()) {
-                                        append("✓ Dispositivo già aggiornato.")
-                                    }
-                                }.trimEnd(),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF66BB6A),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Text(
+                                    text = buildString {
+                                        if (syncState.downloadedCount > 0) {
+                                            append("✓ Sincronizzate ${syncState.downloadedCount} note!\n")
+                                        }
+                                        if (syncState.uploadedArticlesCount > 0) {
+                                            append("✓ ${syncState.uploadedArticlesCount} articoli inviati al Reader!\n")
+                                        }
+                                        if (isEmpty()) {
+                                            append("✓ Tutte le note risultano già scaricate.")
+                                        }
+                                    }.trimEnd(),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            if (syncState.downloadedCount == 0 && onForceResync != null) {
+                                TextButton(
+                                    onClick = onForceResync,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Riscarica tutte le note da zero", fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
 
@@ -290,6 +312,19 @@ fun SyncModalDialog(
                             )
                         }
                     }
+                }
+            }
+        },
+        dismissButton = {
+            if (onForceResync != null && (syncState is SyncState.Success || syncState is SyncState.Error || syncState is SyncState.Idle)) {
+                TextButton(onClick = onForceResync) {
+                    Icon(
+                        imageVector = Icons.Rounded.Sync,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Forza Sync Globale", fontSize = 12.sp)
                 }
             }
         },

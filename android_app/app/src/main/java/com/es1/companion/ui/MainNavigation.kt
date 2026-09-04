@@ -266,7 +266,8 @@ fun MainNavigation(
                     onDeleteLlmModel = { viewModel.deleteLlmModel(it) },
                     onCleanDeviceMemory = { viewModel.cleanDeviceMemory() },
                     modelDownloadState = modelDownloadState,
-                    onDownloadModel = { viewModel.downloadWhisperModel() }
+                    onDownloadModel = { viewModel.downloadWhisperModel() },
+                    onForceGlobalResync = { viewModel.forceGlobalResync() }
                 )
             }
         }
@@ -289,6 +290,7 @@ fun MainNavigation(
             SyncModalDialog(
                 syncState = syncState,
                 onSelectBleDevice = { device -> viewModel.selectBleDeviceAndSync(device) },
+                onForceResync = { viewModel.forceGlobalResync() },
                 onDismiss = { viewModel.closeSyncDialog() }
             )
         }

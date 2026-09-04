@@ -136,16 +136,17 @@ class ES1SyncManager(private val context: Context) {
      */
     suspend fun performSync(
         targetBleMac: String? = null,
+        forceResyncAll: Boolean = false,
         onSyncArticles: (suspend (deviceId: String) -> Int)? = null
     ): SyncResult = withContext(Dispatchers.IO) {
         val useWifi = isWifiModeActive()
 
         if (useWifi) {
-            Log.d(TAG, "Rilevata modalità WI-FI (SoftAP ES1 attivo). Avvio sync Wi-Fi...")
-            return@withContext performWifiSync(onSyncArticles)
+            Log.d(TAG, "Rilevata modalità WI-FI (SoftAP ES1 attivo). Avvio sync Wi-Fi (forceAll=$forceResyncAll)...")
+            return@withContext performWifiSync(forceResyncAll, onSyncArticles)
         } else {
-            Log.d(TAG, "Nessun Wi-Fi ES1 rilevato (o connessione internet attiva). Avvio sync BLE...")
-            return@withContext performBleSync(targetBleMac, onSyncArticles)
+            Log.d(TAG, "Nessun Wi-Fi ES1 rilevato (o connessione internet attiva). Avvio sync BLE (forceAll=$forceResyncAll)...")
+            return@withContext performBleSync(targetBleMac, forceResyncAll, onSyncArticles)
         }
     }
 
@@ -153,6 +154,7 @@ class ES1SyncManager(private val context: Context) {
      * Sincronizzazione via Wi-Fi SoftAP (HTTP REST ad alta velocità)
      */
     private suspend fun performWifiSync(
+        forceResyncAll: Boolean = false,
         onSyncArticles: (suspend (deviceId: String) -> Int)? = null
     ): SyncResult = withContext(Dispatchers.IO) {
         _syncState.value = SyncState.Connecting("Connessione a ES1 via Wi-Fi (192.168.4.1)...", SyncProtocol.WIFI)
@@ -177,11 +179,11 @@ class ES1SyncManager(private val context: Context) {
             }
             val deviceNotes = notesResponse.body()!!.notes
 
-            // 3. Differential sync: note non ancora scaricate
+            // 3. Differential sync: note non ancora scaricate (o tutte se forceResyncAll = true)
             val toDownload = mutableListOf<DeviceNoteItem>()
             for (dn in deviceNotes) {
                 val existing = noteDao.getNoteByDeviceNum(dn.num, deviceId)
-                if (existing == null) {
+                if (existing == null || forceResyncAll) {
                     toDownload.add(dn)
                 }
             }
@@ -223,16 +225,20 @@ class ES1SyncManager(private val context: Context) {
                         }
                         val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
 
+                        val existing = noteDao.getNoteByDeviceNum(dn.num, deviceId)
                         val noteEntity = NoteEntity(
+                            id = existing?.id ?: java.util.UUID.randomUUID().toString(),
                             deviceNoteNum = dn.num,
                             deviceId = deviceId,
-                            createdUtc = nowUtc,
+                            createdUtc = existing?.createdUtc ?: nowUtc,
                             tag = dn.tag,
                             durationSec = dn.durationSec,
                             audioFileSize = targetFile.length(),
                             audioLocalPath = targetFile.absolutePath,
                             audioSha256 = sha256Hex,
-                            isSyncedWithDevice = true
+                            isSyncedWithDevice = true,
+                            transcriptionText = if (forceResyncAll) null else existing?.transcriptionText,
+                            elaboratedMarkdown = if (forceResyncAll) null else existing?.elaboratedMarkdown
                         )
                         noteDao.insertNote(noteEntity)
                         downloadedCount++
@@ -285,6 +291,7 @@ class ES1SyncManager(private val context: Context) {
      */
     private suspend fun performBleSync(
         targetBleMac: String? = null,
+        forceResyncAll: Boolean = false,
         onSyncArticles: (suspend (deviceId: String) -> Int)? = null
     ): SyncResult = withContext(Dispatchers.IO) {
         if (!bleManager.isBluetoothEnabled()) {
@@ -330,12 +337,12 @@ class ES1SyncManager(private val context: Context) {
             val deviceId = info?.deviceId ?: "ES1"
             Log.d(TAG, "[BLE] Connected to $deviceId (bat ${info?.batteryPct}%, pending ${info?.pendingCount})")
 
-            // 2. Note list
+            // 2. Note list (scarica nuove note oppure tutte se forceResyncAll = true)
             val bleNotes = bleManager.getNotesList()
             val toDownload = mutableListOf<com.es1.companion.data.remote.ble.BleNoteItem>()
             for (bn in bleNotes) {
                 val existing = noteDao.getNoteByDeviceNum(bn.num, deviceId)
-                if (existing == null) {
+                if (existing == null || forceResyncAll) {
                     toDownload.add(bn)
                 }
             }
@@ -350,7 +357,12 @@ class ES1SyncManager(private val context: Context) {
                 for ((idx, bn) in toDownload.withIndex()) {
                     val targetFile = File(audioDir, "${deviceId}_note_${String.format(Locale.US, "%03d", bn.num)}.wav")
 
-                    val ok = bleManager.downloadNoteAudio(bn.num, targetFile) { bytesRx, totalBytes ->
+                    val ok = bleManager.downloadNoteAudio(
+                        noteNum = bn.num,
+                        targetFile = targetFile,
+                        itemIdx = idx + 1,
+                        totalItems = toDownload.size
+                    ) { bytesRx, totalBytes ->
                         val currentPct = if (totalBytes > 0) ((bytesRx * 100) / totalBytes).toInt() else 50
                         _syncState.value = SyncState.Progress(
                             protocol = SyncProtocol.BLE,
@@ -368,16 +380,20 @@ class ES1SyncManager(private val context: Context) {
                             .digest(targetFile.readBytes())
                             .joinToString("") { "%02x".format(it) }
 
+                        val existing = noteDao.getNoteByDeviceNum(bn.num, deviceId)
                         val noteEntity = NoteEntity(
+                            id = existing?.id ?: java.util.UUID.randomUUID().toString(),
                             deviceNoteNum = bn.num,
                             deviceId = deviceId,
-                            createdUtc = nowUtc,
+                            createdUtc = existing?.createdUtc ?: nowUtc,
                             tag = bn.tag,
                             durationSec = bn.durationSec,
                             audioFileSize = targetFile.length(),
                             audioLocalPath = targetFile.absolutePath,
                             audioSha256 = sha256Hex,
-                            isSyncedWithDevice = true
+                            isSyncedWithDevice = true,
+                            transcriptionText = if (forceResyncAll) null else existing?.transcriptionText,
+                            elaboratedMarkdown = if (forceResyncAll) null else existing?.elaboratedMarkdown
                         )
                         noteDao.insertNote(noteEntity)
                         downloadedCount++
